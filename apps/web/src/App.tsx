@@ -5,6 +5,8 @@ import type { PatchOp } from "@prynt/patches";
 import { Command } from "cmdk";
 import { HexColorPicker } from "react-colorful";
 import { Bot, Frame, MonitorSmartphone, Palette, ScanSearch, Sparkles, StickyNote } from "lucide-react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import chroma from "chroma-js";
 
 const API_URL = "http://localhost:4000";
 const STAGE_WIDTH = 5000;
@@ -214,6 +216,14 @@ function clampZoom(value: number): number {
 
 function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildThemeFromAccent(accent: string) {
+  const base = chroma(accent);
+  const accent2 = base.set("hsl.h", (base.get("hsl.h") + 38) % 360).saturate(0.4).hex();
+  const panel = base.darken(2.8).desaturate(1.2).hex();
+  const canvas = base.darken(3.6).desaturate(1.5).hex();
+  return { accent, accent2, panel, canvas };
 }
 
 export function App() {
@@ -813,6 +823,14 @@ export function App() {
     setCanvasTone("#10141d");
   }
 
+  function applyAccentHarmony() {
+    const next = buildThemeFromAccent(uiAccent);
+    setUiAccent2(next.accent2);
+    setUiPanelTone(next.panel);
+    setCanvasTone(next.canvas);
+    setStatus("Generated theme harmony from accent.");
+  }
+
   function setThemeColor(value: string) {
     if (themeColorTarget === "accent") {
       setUiAccent(value);
@@ -1019,17 +1037,47 @@ export function App() {
         <section className="panel canvas-panel">
           <div className="canvas-toolbar">
             <h2>{previewDocument ? "Canvas (Preview)" : "Canvas"}</h2>
-            <div className="canvas-controls">
-              <button type="button" onClick={() => setZoom((v) => clampZoom(v - 0.1))}>-</button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button type="button" onClick={() => setZoom((v) => clampZoom(v + 0.1))}>+</button>
-              <button type="button" onClick={() => setZoom(1)}>100%</button>
-              <button type="button" onClick={() => fitToViewport()}>Fit</button>
-              <button type="button" onClick={() => void addCanvasItem("note")}>Add Note</button>
-              <button type="button" onClick={() => void addCanvasItem("frame")}>Add Frame</button>
-              <button type="button" onClick={() => void addCanvasItem("phone")}>Add Screen</button>
-              <button type="button" className="btn-danger" onClick={() => removeSelectedCanvasItem()}>Delete Item</button>
-            </div>
+            <Tooltip.Provider delayDuration={200}>
+              <div className="canvas-controls">
+                <button type="button" onClick={() => setZoom((v) => clampZoom(v - 0.1))}>-</button>
+                <span>{Math.round(zoom * 100)}%</span>
+                <button type="button" onClick={() => setZoom((v) => clampZoom(v + 0.1))}>+</button>
+                <button type="button" onClick={() => setZoom(1)}>100%</button>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button type="button" onClick={() => fitToViewport()}>Fit</button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content className="ui-tooltip" sideOffset={6}>Fit all content in view</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button type="button" onClick={() => void addCanvasItem("note")}>Add Note</button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content className="ui-tooltip" sideOffset={6}>Create a sticky note</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button type="button" onClick={() => void addCanvasItem("frame")}>Add Frame</button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content className="ui-tooltip" sideOffset={6}>Create a loose wireframe area</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button type="button" onClick={() => void addCanvasItem("phone")}>Add Screen</button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content className="ui-tooltip" sideOffset={6}>Add another mobile artboard</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+                <button type="button" className="btn-danger" onClick={() => removeSelectedCanvasItem()}>Delete Item</button>
+              </div>
+            </Tooltip.Provider>
           </div>
 
           <div
@@ -1166,6 +1214,7 @@ export function App() {
             <button type="button" className="btn-soft" onClick={() => applyThemePreset("violet")}>Violet</button>
             <button type="button" className="btn-soft" onClick={() => applyThemePreset("amber")}>Amber</button>
             <button type="button" className="btn-soft" onClick={() => applyThemePreset("mono")}>Mono</button>
+            <button type="button" className="btn-primary theme-generate" onClick={() => applyAccentHarmony()}>Generate From Accent</button>
           </div>
 
           <h3>Versions</h3>
