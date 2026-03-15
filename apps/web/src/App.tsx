@@ -182,6 +182,16 @@ export function App() {
   const activeFileId = selectedCanvasItem?.type === "phone" && selectedCanvasItem.fileId ? selectedCanvasItem.fileId : files[0]?.fileId;
   const activeFile = useMemo(() => files.find((file) => file.fileId === activeFileId) ?? null, [files, activeFileId]);
   const activeDocument = activeFile?.document ?? null;
+  const artboardSummaries = useMemo(
+    () =>
+      files.map((file) => ({
+        fileId: file.fileId,
+        name: file.name,
+        nodeCount: flatten(file.document.root).length,
+        version: file.document.version
+      })),
+    [files]
+  );
   const quickPrompts = useMemo(
     () => [
       "On this screen, add a search bar above cards",
@@ -602,13 +612,16 @@ export function App() {
 
       <main className="layout-grid">
         <aside className="panel layer-panel">
-          <h2>Artboards</h2>
-          <div className="versions">
-            {files.map((file) => (
+          <div className="panel-head">
+            <h2>Artboards</h2>
+            <button type="button" className="mini-action" onClick={() => void addCanvasItem("phone")}>+ New</button>
+          </div>
+          <div className="artboard-list">
+            {artboardSummaries.map((file) => (
               <button
                 key={file.fileId}
                 type="button"
-                className={activeFileId === file.fileId ? "layer-selected" : ""}
+                className={`artboard-item ${activeFileId === file.fileId ? "is-active" : ""}`}
                 onClick={() => {
                   const phone = canvasItems.find((item) => item.type === "phone" && item.fileId === file.fileId);
                   if (phone) {
@@ -616,12 +629,15 @@ export function App() {
                   }
                 }}
               >
-                {file.name}
+                <span className="artboard-title">{file.name}</span>
+                <span className="artboard-meta">Nodes {file.nodeCount} | V{file.version}</span>
               </button>
             ))}
           </div>
 
-          <h2>Layers</h2>
+          <div className="panel-head">
+            <h2>Layers</h2>
+          </div>
           <LayerTree node={activeDocument.root} selectedId={selectedId} onSelect={setSelectedId} />
         </aside>
 
@@ -665,28 +681,33 @@ export function App() {
         </section>
 
         <aside className="panel inspector-panel">
-          <h2>Inspector</h2>
+          <div className="panel-head">
+            <h2>Inspector</h2>
+          </div>
           <div className="mode-tabs">
-            <button type="button" onClick={() => setInspectorMode("props")}>Props</button>
-            <button type="button" onClick={() => setInspectorMode("source")}>Source</button>
-            <button type="button" onClick={() => setInspectorMode("patch")}>Patch</button>
+            <button type="button" className={inspectorMode === "props" ? "tab-active" : ""} onClick={() => setInspectorMode("props")}>Props</button>
+            <button type="button" className={inspectorMode === "source" ? "tab-active" : ""} onClick={() => setInspectorMode("source")}>Source</button>
+            <button type="button" className={inspectorMode === "patch" ? "tab-active" : ""} onClick={() => setInspectorMode("patch")}>Patch</button>
           </div>
 
           {inspectorMode === "props" ? (
             selectedNode ? (
               <>
-                <p><strong>{selectedNode.type}</strong> - {selectedNode.id}</p>
+                <div className="inspector-node-summary">
+                  <span className="node-chip">{selectedNode.type}</span>
+                  <span className="node-id">{selectedNode.id}</span>
+                </div>
                 {Object.entries(selectedNode.props).map(([key, value]) => (
                   <label key={key} className="prop-field">
-                    {key}
+                    <span className="prop-label">{key}</span>
                     <input defaultValue={String(value)} onBlur={(event) => void updateProp(key, event.target.value)} />
                   </label>
                 ))}
                 <div className="inspector-actions">
-                  <button type="button" onClick={() => void addNode("Card")}>Add Card</button>
-                  <button type="button" onClick={() => void addNode("Button")}>Add Button</button>
-                  <button type="button" onClick={() => void addNode("Text")}>Add Text</button>
-                  <button type="button" onClick={() => void removeSelected()}>Remove</button>
+                  <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Add Card</button>
+                  <button type="button" className="btn-soft" onClick={() => void addNode("Button")}>Add Button</button>
+                  <button type="button" className="btn-soft" onClick={() => void addNode("Text")}>Add Text</button>
+                  <button type="button" className="btn-danger" onClick={() => void removeSelected()}>Remove</button>
                 </div>
               </>
             ) : <p>Select a node.</p>
@@ -705,8 +726,8 @@ export function App() {
             <>
               <textarea className="source-box" value={patchText} onChange={(event) => setPatchText(event.target.value)} />
               <div className="inspector-actions">
-                <button type="button" onClick={() => void runPatchPreview()}>Preview Patch</button>
-                <button type="button" onClick={() => void applyPatchFromConsole()}>Apply Patch</button>
+                <button type="button" className="btn-soft" onClick={() => void runPatchPreview()}>Preview Patch</button>
+                <button type="button" className="btn-primary" onClick={() => void applyPatchFromConsole()}>Apply Patch</button>
               </div>
             </>
           ) : null}

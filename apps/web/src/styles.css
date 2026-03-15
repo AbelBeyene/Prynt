@@ -179,6 +179,25 @@ body {
   color: var(--muted);
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mini-action {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #243049, #1d2638);
+  color: var(--ink);
+  font-size: 11px;
+  height: 26px;
+  padding: 0 9px;
+  cursor: pointer;
+}
+
 .layer-panel {
   border-right: 1px solid var(--border);
 }
@@ -206,6 +225,42 @@ body {
 .layer-item button {
   width: 100%;
   text-align: left;
+}
+
+.artboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.artboard-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  height: auto;
+  min-height: 46px;
+  padding: 7px 9px;
+  border-radius: 10px;
+}
+
+.artboard-item.is-active {
+  border-color: #3a72c5 !important;
+  background: linear-gradient(180deg, #223654, #1b2d49) !important;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18) inset;
+}
+
+.artboard-title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.artboard-meta {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .layer-selected {
@@ -420,6 +475,61 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin: 8px 0;
+}
+
+.tab-active {
+  border-color: #3a72c5 !important;
+  background: linear-gradient(180deg, #243a59, #20324d) !important;
+}
+
+.inspector-node-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 2px 0 10px;
+}
+
+.node-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid #34527d;
+  background: linear-gradient(180deg, #243653, #1d2c45);
+  color: #d8e6ff;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.node-id {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.prop-label {
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+
+.btn-soft {
+  border-color: #394863 !important;
+  background: linear-gradient(180deg, #25324a, #1d2739) !important;
+}
+
+.btn-primary {
+  border-color: #1d4ed8 !important;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8) !important;
+  color: #f5f9ff !important;
+}
+
+.btn-danger {
+  border-color: #7f1d1d !important;
+  background: linear-gradient(180deg, #9f1239, #881337) !important;
+  color: #fff1f2 !important;
 }
 
 .mode-tabs {
