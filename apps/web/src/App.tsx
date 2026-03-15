@@ -94,6 +94,13 @@ interface ReusableSection {
   createdAt: string;
 }
 
+interface ContextPromptState {
+  open: boolean;
+  x: number;
+  y: number;
+  text: string;
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -201,36 +208,36 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
 
   if (node.type === "Heading") {
     return (
-      <h2 key={node.id} className={className} onClick={onClick} style={{ fontSize: fontSizeToPx(node.props.size) }}>
+      <h2 key={node.id} data-node-id={node.id} className={className} onClick={onClick} style={{ fontSize: fontSizeToPx(node.props.size) }}>
         {String(node.props.text ?? "Heading")}
       </h2>
     );
   }
-  if (node.type === "Text") return <p key={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Text")}</p>;
-  if (node.type === "Badge") return <span key={node.id} className={`${className} badge ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.text ?? "Badge")}</span>;
-  if (node.type === "Avatar") return <div key={node.id} className={`${className} avatar`} onClick={onClick}>{String(node.props.initials ?? "AB")}</div>;
-  if (node.type === "Icon") return <div key={node.id} className={`${className} icon ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.name ?? "icon")}</div>;
-  if (node.type === "Divider") return <hr key={node.id} className={className} onClick={onClick} />;
-  if (node.type === "Spacer") return <div key={node.id} className={className} onClick={onClick} style={{ height: spacingToPx(node.props.size) ?? 14 }} />;
+  if (node.type === "Text") return <p key={node.id} data-node-id={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Text")}</p>;
+  if (node.type === "Badge") return <span key={node.id} data-node-id={node.id} className={`${className} badge ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.text ?? "Badge")}</span>;
+  if (node.type === "Avatar") return <div key={node.id} data-node-id={node.id} className={`${className} avatar`} onClick={onClick}>{String(node.props.initials ?? "AB")}</div>;
+  if (node.type === "Icon") return <div key={node.id} data-node-id={node.id} className={`${className} icon ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.name ?? "icon")}</div>;
+  if (node.type === "Divider") return <hr key={node.id} data-node-id={node.id} className={className} onClick={onClick} />;
+  if (node.type === "Spacer") return <div key={node.id} data-node-id={node.id} className={className} onClick={onClick} style={{ height: spacingToPx(node.props.size) ?? 14 }} />;
   if (node.type === "Image") {
-    return <img key={node.id} className={className} onClick={onClick} src={String(node.props.src ?? "https://placehold.co/640x360")} alt={String(node.props.alt ?? "Image")} style={{ height: Number(node.props.height ?? 180), objectFit: "cover", width: "100%" }} />;
+    return <img key={node.id} data-node-id={node.id} className={className} onClick={onClick} src={String(node.props.src ?? "https://placehold.co/640x360")} alt={String(node.props.alt ?? "Image")} style={{ height: Number(node.props.height ?? 180), objectFit: "cover", width: "100%" }} />;
   }
   if (node.type === "Button" || node.type === "FloatingActionButton") {
-    return <button key={node.id} className={`${className} ${toneClass(node.props.tone)}`} onClick={onClick} type="button">{String(node.props.text ?? node.props.icon ?? "Button")}</button>;
+    return <button key={node.id} data-node-id={node.id} className={`${className} ${toneClass(node.props.tone)}`} onClick={onClick} type="button">{String(node.props.text ?? node.props.icon ?? "Button")}</button>;
   }
 
   if (node.type === "TopBar") {
-    return <div key={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Top Bar")}</div>;
+    return <div key={node.id} data-node-id={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Top Bar")}</div>;
   }
   if (node.type === "Navbar") {
-    return <div key={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Navbar")}</div>;
+    return <div key={node.id} data-node-id={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Navbar")}</div>;
   }
 
   if (node.type === "BottomTabBar") {
     const childTabs = node.children.filter((child) => child.type === "Tabs");
     const tabs = childTabs.length > 0 ? childTabs.length : Number(node.props.tabs ?? 4);
     return (
-      <div key={node.id} className={`${className} tabbar`} onClick={onClick}>
+      <div key={node.id} data-node-id={node.id} className={`${className} tabbar`} onClick={onClick}>
         {Array.from({ length: tabs }).map((_, index) => <span key={`${node.id}-${index}`} className="tab">{childTabs[index] ? String(childTabs[index].props.label ?? `Tab ${index + 1}`) : `Tab ${index + 1}`}</span>)}
       </div>
     );
@@ -238,36 +245,36 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
 
   if (node.type === "TextField" || node.type === "Input") {
     return (
-      <div key={node.id} className={className} onClick={onClick}>
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
         <label>{String(node.props.label ?? "Label")}</label>
         <input placeholder={String(node.props.placeholder ?? "Type...")} readOnly style={{ minHeight: Number(node.props.minHeight ?? 44) }} />
       </div>
     );
   }
   if (node.type === "SearchBar") {
-    return <input key={node.id} className={`${className} search`} onClick={onClick} readOnly placeholder={String(node.props.placeholder ?? "Search")} style={{ minHeight: Number(node.props.minHeight ?? 44) }} />;
+    return <input key={node.id} data-node-id={node.id} className={`${className} search`} onClick={onClick} readOnly placeholder={String(node.props.placeholder ?? "Search")} style={{ minHeight: Number(node.props.minHeight ?? 44) }} />;
   }
   if (node.type === "TextArea") {
-    return <textarea key={node.id} className={className} onClick={onClick} readOnly rows={Number(node.props.rows ?? 4)} placeholder={String(node.props.placeholder ?? "Write here...")} />;
+    return <textarea key={node.id} data-node-id={node.id} className={className} onClick={onClick} readOnly rows={Number(node.props.rows ?? 4)} placeholder={String(node.props.placeholder ?? "Write here...")} />;
   }
   if (node.type === "Checkbox" || node.type === "Toggle") {
-    return <label key={node.id} className={className} onClick={onClick}><input type="checkbox" checked={Boolean(node.props.checked)} readOnly /> {String(node.props.label ?? "Option")}</label>;
+    return <label key={node.id} data-node-id={node.id} className={className} onClick={onClick}><input type="checkbox" checked={Boolean(node.props.checked)} readOnly /> {String(node.props.label ?? "Option")}</label>;
   }
   if (node.type === "Select" || node.type === "Picker" || node.type === "RadioGroup") {
     const options = String(node.props.options ?? "One|Two|Three").split("|").map((item) => item.trim()).filter(Boolean);
     return (
-      <div key={node.id} className={className} onClick={onClick}>
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
         <label>{String(node.props.label ?? "Select")}</label>
         <select disabled>{options.map((option) => <option key={option}>{option}</option>)}</select>
       </div>
     );
   }
   if (node.type === "List") {
-    return <ul key={node.id} className={className} onClick={onClick}>{node.children.map((child) => renderNode(child, selectedId, onSelect))}</ul>;
+    return <ul key={node.id} data-node-id={node.id} className={className} onClick={onClick}>{node.children.map((child) => renderNode(child, selectedId, onSelect))}</ul>;
   }
   if (node.type === "ListItem") {
     return (
-      <li key={node.id} className={`${className} list-item`} onClick={onClick}>
+      <li key={node.id} data-node-id={node.id} className={`${className} list-item`} onClick={onClick}>
         <span>{String(node.props.title ?? "Item")}</span>
         {node.props.subtitle ? <small>{String(node.props.subtitle)}</small> : null}
       </li>
@@ -277,7 +284,7 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
     const rows = Math.max(1, Number(node.props.rows ?? 3));
     const cols = Math.max(1, Number(node.props.columns ?? 3));
     return (
-      <table key={node.id} className={className} onClick={onClick}>
+      <table key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
         <tbody>
           {Array.from({ length: rows }).map((_, row) => (
             <tr key={`${node.id}-${row}`}>
@@ -290,7 +297,7 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
   }
   if (node.type === "Modal") {
     return (
-      <div key={node.id} className={`${className} modal-shell`} onClick={onClick}>
+      <div key={node.id} data-node-id={node.id} className={`${className} modal-shell`} onClick={onClick}>
         <div className="modal-card">
           <strong>{String(node.props.title ?? "Modal")}</strong>
           {node.children.map((child) => renderNode(child, selectedId, onSelect))}
@@ -320,7 +327,7 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
   };
 
   return (
-    <div key={node.id} className={`${className} ${containerType} ${toneClass(node.props.tone)}`} onClick={onClick} style={customStyle}>
+    <div key={node.id} data-node-id={node.id} className={`${className} ${containerType} ${toneClass(node.props.tone)}`} onClick={onClick} style={customStyle}>
       {node.type !== "Screen" && node.type !== "ScrollView" ? <div className="node-label">{node.type}</div> : null}
       {node.children.map((child) => renderNode(child, selectedId, onSelect))}
     </div>
@@ -452,6 +459,7 @@ export function App() {
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
   const [promptWarnings, setPromptWarnings] = useState<string[]>([]);
   const [lastPromptSummary, setLastPromptSummary] = useState("");
+  const [contextPrompt, setContextPrompt] = useState<ContextPromptState>({ open: false, x: 240, y: 180, text: "" });
   const [promptLibraryQuery, setPromptLibraryQuery] = useState("");
   const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
@@ -1231,6 +1239,33 @@ export function App() {
     setCanvasTone("#10141d");
   }
 
+  function openContextPrompt() {
+    if (!selectedId) {
+      setStatus("Select a node first, then press Shift+P.");
+      return;
+    }
+    const target = document.querySelector(`[data-node-id="${selectedId}"]`) as HTMLElement | null;
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      setContextPrompt((current) => ({
+        ...current,
+        open: true,
+        x: Math.min(window.innerWidth - 360, Math.max(12, rect.right + 10)),
+        y: Math.min(window.innerHeight - 180, Math.max(12, rect.top)),
+        text: ""
+      }));
+      return;
+    }
+
+    setContextPrompt((current) => ({
+      ...current,
+      open: true,
+      x: Math.max(16, window.innerWidth / 2 - 150),
+      y: Math.max(16, window.innerHeight / 2 - 60),
+      text: ""
+    }));
+  }
+
   function applyAccentHarmony() {
     const next = buildThemeFromAccent(uiAccent);
     setUiAccent2(next.accent2);
@@ -1337,6 +1372,12 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTypingField = target ? target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable : false;
+
+      if (!isTypingField && event.shiftKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        openContextPrompt();
+        return;
+      }
 
       if (!isTypingField && event.key === "/") {
         event.preventDefault();
@@ -1752,6 +1793,44 @@ export function App() {
             : lastPromptSummary || "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
       </section>
+
+      {contextPrompt.open ? (
+        <div className="context-prompt-popover" style={{ left: contextPrompt.x, top: contextPrompt.y }}>
+          <div className="context-prompt-head">
+            <span>Prompt Selected Node</span>
+            <button type="button" onClick={() => setContextPrompt((current) => ({ ...current, open: false }))}>Close</button>
+          </div>
+          <textarea
+            value={contextPrompt.text}
+            onChange={(event) => setContextPrompt((current) => ({ ...current, text: event.target.value }))}
+            placeholder="e.g. Make this card premium and add a primary CTA"
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                setPrompt(contextPrompt.text);
+                void handlePrompt(contextPrompt.text);
+                setContextPrompt((current) => ({ ...current, open: false }));
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setContextPrompt((current) => ({ ...current, open: false }));
+              }
+            }}
+          />
+          <div className="context-prompt-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setPrompt(contextPrompt.text);
+                void handlePrompt(contextPrompt.text);
+                setContextPrompt((current) => ({ ...current, open: false }));
+              }}
+            >
+              Apply To Selection
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {isCommandOpen ? (
         <div className="command-overlay" onClick={() => setIsCommandOpen(false)}>

@@ -1055,6 +1055,68 @@ body {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
 }
 
+.context-prompt-popover {
+  position: fixed;
+  z-index: 22;
+  width: min(340px, calc(100vw - 24px));
+  border: 1px solid #3a4f74;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #172235, #111a2a);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.context-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.context-prompt-head button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #1b2537;
+  color: var(--ink);
+  height: 24px;
+  padding: 0 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.context-prompt-popover textarea {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f1624;
+  color: #dbe7ff;
+  font: inherit;
+  font-size: 12px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.context-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.context-prompt-actions button {
+  border: 1px solid #1d4ed8;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  color: #f8fbff;
+  height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .loading {
   display: grid;
   place-content: center;

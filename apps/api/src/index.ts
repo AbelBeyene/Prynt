@@ -1048,6 +1048,13 @@ function containsAny(text: string, words: string[]): boolean {
   return words.some((word) => text.includes(word));
 }
 
+function pickFirst(text: string, words: string[]): string | null {
+  for (const word of words) {
+    if (text.includes(word)) return word;
+  }
+  return null;
+}
+
 function buildDashboardStack(): AstNode {
   return createNode("Stack", nextId("stack"), { gap: "lg", padding: "lg" }, [
     createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
@@ -1127,6 +1134,85 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
   const stackTarget = findFirstNodeByType(document.root, "Stack");
   const scrollTarget = findFirstNodeByType(document.root, "ScrollView");
   const targetParent = selectedNodeId ?? stackTarget?.id ?? scrollTarget?.id ?? document.root.id;
+  const selectedNode = selectedNodeId ? findNodePath(document.root, selectedNodeId)?.node ?? null : null;
+
+  if (selectedNode) {
+    if (containsAny(lower, ["delete this", "remove this"])) {
+      patches.push({ opId: nextId("selected-remove"), type: "removeNode", targetId: selectedNode.id });
+    }
+
+    const tone = pickFirst(lower, ["primary", "secondary", "accent", "surface", "muted", "danger"]);
+    if (tone && "tone" in selectedNode.props) {
+      patches.push({
+        opId: nextId("selected-tone"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { tone }
+      });
+    }
+
+    if (containsAny(lower, ["rounded", "rounder"])) {
+      patches.push({
+        opId: nextId("selected-radius"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { radius: "xl" }
+      });
+    }
+    if (containsAny(lower, ["less rounded", "sharper"])) {
+      patches.push({
+        opId: nextId("selected-radius"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { radius: "sm" }
+      });
+    }
+
+    if (containsAny(lower, ["increase padding", "more padding"])) {
+      patches.push({
+        opId: nextId("selected-padding"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { padding: "lg" }
+      });
+    }
+    if (containsAny(lower, ["reduce padding", "less padding"])) {
+      patches.push({
+        opId: nextId("selected-padding"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { padding: "sm" }
+      });
+    }
+
+    if (containsAny(lower, ["bigger", "larger", "increase size"])) {
+      patches.push({
+        opId: nextId("selected-size"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { size: "lg" }
+      });
+    }
+    if (containsAny(lower, ["smaller", "decrease size"])) {
+      patches.push({
+        opId: nextId("selected-size"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { size: "sm" }
+      });
+    }
+
+    const textMatch = prompt.match(/(?:text|title|label)\s+to\s+["']([^"']+)["']/i);
+    if (textMatch?.[1]) {
+      const key = selectedNode.props.text !== undefined ? "text" : selectedNode.props.title !== undefined ? "title" : "label";
+      patches.push({
+        opId: nextId("selected-text"),
+        type: "updateProps",
+        targetId: selectedNode.id,
+        props: { [key]: textMatch[1] }
+      });
+    }
+  }
 
   if (containsAny(lower, ["dashboard", "analytics", "overview"])) {
     if (stackTarget) {
