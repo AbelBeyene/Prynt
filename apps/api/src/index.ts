@@ -1055,6 +1055,25 @@ function pickFirst(text: string, words: string[]): string | null {
   return null;
 }
 
+function mapColorWordToTone(word: string): string | null {
+  const table: Record<string, string> = {
+    red: "danger",
+    pink: "danger",
+    blue: "primary",
+    cyan: "primary",
+    teal: "accent",
+    green: "accent",
+    yellow: "accent",
+    orange: "secondary",
+    purple: "secondary",
+    gray: "muted",
+    grey: "muted",
+    black: "surface",
+    white: "surface"
+  };
+  return table[word] ?? null;
+}
+
 function buildDashboardStack(): AstNode {
   return createNode("Stack", nextId("stack"), { gap: "lg", padding: "lg" }, [
     createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
@@ -1141,13 +1160,17 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
       patches.push({ opId: nextId("selected-remove"), type: "removeNode", targetId: selectedNode.id });
     }
 
-    const tone = pickFirst(lower, ["primary", "secondary", "accent", "surface", "muted", "danger"]);
-    if (tone && "tone" in selectedNode.props) {
+    const toneCapable = new Set(["Button", "Card", "Badge", "Container", "Icon", "FloatingActionButton", "PricingTable"]);
+    const explicitTone = pickFirst(lower, ["primary", "secondary", "accent", "surface", "muted", "danger"]);
+    const colorAliasMatch = lower.match(/\b(red|blue|green|purple|orange|yellow|gray|grey|black|white|teal|cyan|pink)\b/);
+    const colorWord = colorAliasMatch?.[1];
+    const mappedTone = explicitTone ?? (colorWord ? mapColorWordToTone(colorWord) : null);
+    if (mappedTone && toneCapable.has(selectedNode.type)) {
       patches.push({
         opId: nextId("selected-tone"),
         type: "updateProps",
         targetId: selectedNode.id,
-        props: { tone }
+        props: { tone: mappedTone }
       });
     }
 
