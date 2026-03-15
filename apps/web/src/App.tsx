@@ -182,6 +182,15 @@ export function App() {
   const activeFileId = selectedCanvasItem?.type === "phone" && selectedCanvasItem.fileId ? selectedCanvasItem.fileId : files[0]?.fileId;
   const activeFile = useMemo(() => files.find((file) => file.fileId === activeFileId) ?? null, [files, activeFileId]);
   const activeDocument = activeFile?.document ?? null;
+  const quickPrompts = useMemo(
+    () => [
+      "On this screen, add a search bar above cards",
+      "Make this screen look more premium",
+      "On all screens, increase heading hierarchy",
+      "On screen 2, add a CTA button at the bottom"
+    ],
+    []
+  );
 
   const selectedNode = useMemo(() => {
     if (!activeDocument || !selectedId) return null;
@@ -316,13 +325,13 @@ export function App() {
     setStatus(response.applied ? "Preview ready" : `Preview invalid: ${response.repairSuggestions.join(" | ")}`);
   }
 
-  async function handlePrompt() {
+  async function handlePrompt(overridePrompt?: string) {
     if (!projectId || !activeFileId) {
       setStatus("No active screen selected.");
       return;
     }
 
-    const trimmedPrompt = prompt.trim();
+    const trimmedPrompt = (overridePrompt ?? prompt).trim();
     if (!trimmedPrompt) {
       setStatus("Type a prompt before applying.");
       return;
@@ -365,6 +374,11 @@ export function App() {
     } finally {
       setIsApplyingPrompt(false);
     }
+  }
+
+  async function runQuickPrompt(text: string) {
+    setPrompt(text);
+    await handlePrompt(text);
   }
 
   async function handleSimulatePrompt() {
@@ -570,37 +584,20 @@ export function App() {
         <h1>Prynt Prompt-Native UX Editor</h1>
         <p>{status}</p>
       </header>
-
-      <section className="prompt-row">
-        <input
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void handlePrompt();
-            }
-          }}
-          placeholder="Describe your UI change..."
-        />
-        <button type="button" onClick={() => void handlePrompt()} disabled={isApplyingPrompt}>
-          {isApplyingPrompt ? "Applying..." : "Apply Prompt"}
-        </button>
-        <button type="button" onClick={() => void handleSimulatePrompt()} disabled={isSimulatingPrompt}>
-          {isSimulatingPrompt ? "Simulating..." : "Simulate"}
-        </button>
-        <button type="button" onClick={() => void handleRepair()}>Repair</button>
-        <button type="button" onClick={() => void handleUndo()}>Undo</button>
-        <button type="button" onClick={() => void handleRedo()}>Redo</button>
-        <select value={device} onChange={(event) => setDevice(event.target.value as DevicePreset)}>
-          <option value="iphone">iPhone (390)</option>
-          <option value="android">Android (360)</option>
-          <option value="tablet">Tablet (768)</option>
-        </select>
-      </section>
-      <section className="prompt-meta">
-        <span>Confidence: {promptConfidence !== null ? `${Math.round(promptConfidence * 100)}%` : "n/a"}</span>
-        <span>{promptWarnings.length > 0 ? promptWarnings.join(" | ") : "No intent warnings"}</span>
+      <section className="workspace-tools">
+        <div className="workspace-tools-left">
+          <button type="button" onClick={() => void handleUndo()}>Undo</button>
+          <button type="button" onClick={() => void handleRedo()}>Redo</button>
+          <button type="button" onClick={() => void handleRepair()}>Repair</button>
+        </div>
+        <div className="workspace-tools-right">
+          <span className="active-target">Target: {activeFile?.name ?? "n/a"}</span>
+          <select value={device} onChange={(event) => setDevice(event.target.value as DevicePreset)}>
+            <option value="iphone">iPhone (390)</option>
+            <option value="android">Android (360)</option>
+            <option value="tablet">Tablet (768)</option>
+          </select>
+        </div>
       </section>
 
       <main className="layout-grid">
@@ -724,6 +721,42 @@ export function App() {
           </div>
         </aside>
       </main>
+
+      <section className="prompt-dock">
+        <div className="prompt-dock-head">
+          <span>Prompt Assistant</span>
+          <span>Confidence: {promptConfidence !== null ? `${Math.round(promptConfidence * 100)}%` : "n/a"}</span>
+        </div>
+        <div className="prompt-dock-main">
+          <input
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handlePrompt();
+              }
+            }}
+            placeholder="Ask for a change (e.g. On screen 2, add a pricing card and CTA)..."
+          />
+          <button type="button" onClick={() => void handleSimulatePrompt()} disabled={isSimulatingPrompt}>
+            {isSimulatingPrompt ? "Simulating..." : "Simulate"}
+          </button>
+          <button type="button" onClick={() => void handlePrompt()} disabled={isApplyingPrompt}>
+            {isApplyingPrompt ? "Applying..." : "Apply"}
+          </button>
+        </div>
+        <div className="prompt-chip-row">
+          {quickPrompts.map((chip) => (
+            <button key={chip} type="button" className="prompt-chip" onClick={() => void runQuickPrompt(chip)}>
+              {chip}
+            </button>
+          ))}
+        </div>
+        <div className="prompt-dock-foot">
+          {promptWarnings.length > 0 ? promptWarnings.join(" | ") : "Tip: reference screens by name, screen number, or 'all screens'."}
+        </div>
+      </section>
 
       <footer className="footer">Files: {files.length} | Nodes: {flatten(activeDocument.root).length} | Version: {activeDocument.version}</footer>
     </div>
