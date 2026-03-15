@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    { "path": "../ast" },
+    { "path": "../component-registry" },
+    { "path": "../patches" },
+    { "path": "../tokens" }
+  ],
+  "include": ["src"]
+}

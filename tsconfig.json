@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/tokens" },
+    { "path": "packages/component-registry" },
+    { "path": "packages/ast" },
+    { "path": "packages/dsl" },
+    { "path": "packages/patches" },
+    { "path": "packages/validator" },
+    { "path": "packages/repair" },
+    { "path": "packages/core" },
+    { "path": "apps/api" },
+    { "path": "apps/web" }
+  ]
+}

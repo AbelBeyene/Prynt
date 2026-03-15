@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    { "path": "../../packages/ast" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/patches" },
+    { "path": "../../packages/repair" },
+    { "path": "../../packages/validator" }
+  ],
+  "include": ["src"]
+}

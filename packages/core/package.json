@@ -1,0 +1,12 @@
+{
+  "name": "@prynt/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@prynt/ast": "0.1.0",
+    "@prynt/patches": "0.1.0",
+    "@prynt/validator": "0.1.0"
+  }
+}
