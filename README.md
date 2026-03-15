@@ -20,6 +20,7 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Undo/redo.
 - Artboard lifecycle operations (create, rename, duplicate, delete).
 - Template library with apply-to-screen flow.
+- Reusable section library (save selected structure and reinsert later).
 - Multi-format exports (JSON, DSL, React-like component output, schema summary).
 - Mobile device previews: iPhone (390), Android (360), Tablet (768).
 

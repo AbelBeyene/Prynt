@@ -831,6 +831,19 @@ body {
   gap: 6px;
 }
 
+.section-library {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.section-library-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
 .prompt-dock {
   height: var(--prompt-dock-h);
   border-top: 1px solid var(--border);

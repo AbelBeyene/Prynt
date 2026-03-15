@@ -87,6 +87,13 @@ interface ProjectSummary {
   fileCount: number;
 }
 
+interface ReusableSection {
+  id: string;
+  name: string;
+  node: AstNode;
+  createdAt: string;
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -454,6 +461,8 @@ export function App() {
   const [exportFormat, setExportFormat] = useState<ExportResult["format"]>("json");
   const [exportText, setExportText] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [sectionsLibrary, setSectionsLibrary] = useState<ReusableSection[]>([]);
+  const [selectedSectionId, setSelectedSectionId] = useState("");
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
@@ -534,6 +543,8 @@ export function App() {
       { id: "new-frame", label: "Add Frame", icon: Frame, action: () => void addCanvasItem("frame") },
       { id: "fit-canvas", label: "Fit Canvas", icon: ScanSearch, action: () => fitToViewport() },
       { id: "duplicate-screen", label: "Duplicate Artboard", icon: MonitorSmartphone, action: () => void duplicateActiveArtboard() },
+      { id: "save-section", label: "Save Selected Section", icon: Sparkles, action: () => saveSelectedAsSection() },
+      { id: "insert-section", label: "Insert Saved Section", icon: Frame, action: () => void insertSelectedSection() },
       { id: "apply-template", label: "Apply Selected Template", icon: Sparkles, action: () => void applySelectedTemplate() },
       { id: "export", label: "Export Active File", icon: Palette, action: () => void exportActiveFile() },
       { id: "theme-teal", label: "Theme: Teal", icon: Palette, action: () => applyThemePreset("teal") },
@@ -541,7 +552,7 @@ export function App() {
       { id: "theme-amber", label: "Theme: Amber", icon: Palette, action: () => applyThemePreset("amber") },
       { id: "theme-mono", label: "Theme: Mono", icon: Palette, action: () => applyThemePreset("mono") }
     ],
-    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset, duplicateActiveArtboard, applySelectedTemplate, exportActiveFile]
+    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset, duplicateActiveArtboard, applySelectedTemplate, exportActiveFile, selectedSectionId, sectionsLibrary, selectedId]
   );
 
   useEffect(() => {
@@ -572,6 +583,20 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const raw = localStorage.getItem("prynt-sections-library");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as ReusableSection[];
+      setSectionsLibrary(parsed);
+      if (parsed[0]) {
+        setSelectedSectionId(parsed[0].id);
+      }
+    } catch {
+      // ignore corrupt cache
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(
       "prynt-ui-settings",
       JSON.stringify({
@@ -583,6 +608,10 @@ export function App() {
       })
     );
   }, [uiAccent, uiAccent2, uiPanelTone, canvasTone, device]);
+
+  useEffect(() => {
+    localStorage.setItem("prynt-sections-library", JSON.stringify(sectionsLibrary.slice(0, 100)));
+  }, [sectionsLibrary]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -948,6 +977,45 @@ export function App() {
     const clone = cloneNodeWithNewIds(source);
     await applyPatch([{ opId: uid("duplicate"), type: "addNode", parentId, node: clone }], `Duplicate ${source.type}`);
     setSelectedId(clone.id);
+  }
+
+  function saveSelectedAsSection() {
+    if (!selectedNode) {
+      setStatus("Select a node to save as reusable section.");
+      return;
+    }
+    const section: ReusableSection = {
+      id: uid("section"),
+      name: `${selectedNode.type} ${new Date().toLocaleTimeString()}`,
+      node: cloneNodeWithNewIds(selectedNode),
+      createdAt: new Date().toISOString()
+    };
+    setSectionsLibrary((current) => [section, ...current].slice(0, 100));
+    setSelectedSectionId(section.id);
+    setStatus(`Saved reusable section: ${section.name}`);
+  }
+
+  async function insertSelectedSection() {
+    if (!selectedId) {
+      setStatus("Select a parent node before inserting a reusable section.");
+      return;
+    }
+    const section = sectionsLibrary.find((item) => item.id === selectedSectionId);
+    if (!section) {
+      setStatus("Choose a reusable section first.");
+      return;
+    }
+    const node = cloneNodeWithNewIds(section.node);
+    await applyPatch([{ opId: uid("section"), type: "addNode", parentId: selectedId, node }], `Insert section: ${section.name}`);
+  }
+
+  function removeSavedSection() {
+    if (!selectedSectionId) return;
+    setSectionsLibrary((current) => {
+      const next = current.filter((item) => item.id !== selectedSectionId);
+      setSelectedSectionId(next[0]?.id ?? "");
+      return next;
+    });
   }
 
   async function updateProp(key: string, value: string) {
@@ -1604,6 +1672,22 @@ export function App() {
                 V{version.id} - {version.reason}
               </button>
             ))}
+          </div>
+          <h3>Reusable Sections</h3>
+          <div className="section-library">
+            <button type="button" className="btn-soft" onClick={() => saveSelectedAsSection()}>Save Selected Section</button>
+            <select value={selectedSectionId} onChange={(event) => setSelectedSectionId(event.target.value)}>
+              <option value="">Select saved section</option>
+              {sectionsLibrary.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </select>
+            <div className="section-library-actions">
+              <button type="button" className="btn-soft" onClick={() => void insertSelectedSection()}>Insert Section</button>
+              <button type="button" className="btn-danger" onClick={() => removeSavedSection()}>Delete Saved</button>
+            </div>
           </div>
           <h3>Export Output</h3>
           <textarea className="source-box" readOnly value={exportText || "Use Export from the top toolbar."} />
