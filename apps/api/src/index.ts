@@ -61,6 +61,7 @@ export interface GenerateFromPromptRequest {
 export interface PromptResult {
   prompt: string;
   fileId: string;
+  fileName: string;
   source: "llm" | "rule";
   patches: PatchOp[];
   response: ApplyPatchResponse;
@@ -279,7 +280,8 @@ export class EditorApiService {
   }
 
   async generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptResult> {
-    const { file } = this.resolveFile(projectId, request.fileId);
+    const { project, file: initialFile } = this.resolveFile(projectId, request.fileId);
+    const file = this.resolvePromptTargetFile(project, request.prompt, initialFile);
     if (canUseLlm()) {
       try {
         const llmPatches = await generatePatchesFromLlm(request.prompt, file.document, request.selectedNodeId);
@@ -288,6 +290,7 @@ export class EditorApiService {
           return {
             prompt: request.prompt,
             fileId: file.fileId,
+            fileName: file.name,
             source: "llm",
             patches: llmPatches,
             response: llmResponse
@@ -306,6 +309,7 @@ export class EditorApiService {
     return {
       prompt: request.prompt,
       fileId: file.fileId,
+      fileName: file.name,
       source: "rule",
       patches,
       response
@@ -366,6 +370,36 @@ export class EditorApiService {
     }
     const file = this.requireFile(project, resolvedFileId);
     return { project, file };
+  }
+
+  private resolvePromptTargetFile(project: ProjectState, prompt: string, fallback: FileState): FileState {
+    const lower = prompt.toLowerCase();
+
+    const fileIdMatch = lower.match(/\bfile-(\d+)\b/);
+    if (fileIdMatch?.[0]) {
+      const byId = project.files.get(fileIdMatch[0]);
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const screenNumberMatch = lower.match(/\bscreen\s+(\d+)\b/);
+    if (screenNumberMatch?.[1]) {
+      const candidateId = `file-${screenNumberMatch[1]}`;
+      const byScreenNumber = project.files.get(candidateId);
+      if (byScreenNumber) {
+        return byScreenNumber;
+      }
+    }
+
+    for (const fileId of project.fileOrder) {
+      const file = this.requireFile(project, fileId);
+      if (lower.includes(file.name.toLowerCase())) {
+        return file;
+      }
+    }
+
+    return fallback;
   }
 
   private requireProject(projectId: string): ProjectState {
