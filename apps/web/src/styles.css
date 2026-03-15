@@ -467,6 +467,25 @@ body {
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
 }
 
+.grid {
+  display: grid;
+}
+
+.form {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar {
+  border: 1px dashed #a2b0cb;
+  border-radius: 10px;
+  padding: 10px;
+}
+
 .node-button {
   width: 100%;
   min-height: 44px;
@@ -476,12 +495,124 @@ body {
   color: #fff;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #0ea5e9, #1d4ed8);
+  color: #eef6ff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.icon {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
 .node-textfield input {
   width: 100%;
   margin-top: 6px;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.node-searchbar {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.node-list {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.list-item small {
+  color: #7b869f;
+}
+
+.node-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.node-table td {
+  border: 1px solid var(--border);
+  padding: 6px;
+  font-size: 11px;
+}
+
+.modal-shell {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.modal-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tone-primary {
+  background: linear-gradient(120deg, #2563eb, #1d4ed8);
+  color: #f8fbff;
+}
+
+.tone-secondary {
+  background: linear-gradient(120deg, #6366f1, #4338ca);
+  color: #f8fbff;
+}
+
+.tone-accent {
+  background: linear-gradient(120deg, #14b8a6, #0f766e);
+  color: #f5fffb;
+}
+
+.tone-muted {
+  background: #f3f4f6;
+  color: #334155;
+}
+
+.tone-danger {
+  background: linear-gradient(120deg, #e11d48, #be123c);
+  color: #fff1f2;
 }
 
 .tabbar {

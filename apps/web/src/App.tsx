@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MouseEventHandler } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type MouseEventHandler } from "react";
 import type { AstNode, DocumentAst } from "@prynt/ast";
 import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
@@ -99,6 +99,23 @@ function findNode(root: AstNode, id: string): AstNode | null {
   return null;
 }
 
+function spacingToPx(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const map: Record<string, number> = { xs: 6, sm: 10, md: 14, lg: 20, xl: 28 };
+  return map[value];
+}
+
+function fontSizeToPx(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const map: Record<string, number> = { xs: 12, sm: 13, md: 14, lg: 18, xl: 22, "2xl": 28, "3xl": 34, "4xl": 40, "5xl": 46 };
+  return map[value];
+}
+
+function toneClass(value: unknown): string {
+  if (typeof value !== "string") return "tone-surface";
+  return `tone-${value}`;
+}
+
 function collectVisibleLayerIds(root: AstNode, query: string): Set<string> {
   const q = query.trim().toLowerCase();
   const all = flatten(root);
@@ -140,36 +157,128 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
     onSelect(node.id);
   };
 
-  if (node.type === "Heading") return <h2 key={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Heading")}</h2>;
+  if (node.type === "Heading") {
+    return (
+      <h2 key={node.id} className={className} onClick={onClick} style={{ fontSize: fontSizeToPx(node.props.size) }}>
+        {String(node.props.text ?? "Heading")}
+      </h2>
+    );
+  }
   if (node.type === "Text") return <p key={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Text")}</p>;
-  if (node.type === "Button") return <button key={node.id} className={className} onClick={onClick} type="button">{String(node.props.text ?? "Button")}</button>;
+  if (node.type === "Badge") return <span key={node.id} className={`${className} badge ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.text ?? "Badge")}</span>;
+  if (node.type === "Avatar") return <div key={node.id} className={`${className} avatar`} onClick={onClick}>{String(node.props.initials ?? "AB")}</div>;
+  if (node.type === "Icon") return <div key={node.id} className={`${className} icon ${toneClass(node.props.tone)}`} onClick={onClick}>{String(node.props.name ?? "icon")}</div>;
+  if (node.type === "Divider") return <hr key={node.id} className={className} onClick={onClick} />;
+  if (node.type === "Spacer") return <div key={node.id} className={className} onClick={onClick} style={{ height: spacingToPx(node.props.size) ?? 14 }} />;
+  if (node.type === "Image") {
+    return <img key={node.id} className={className} onClick={onClick} src={String(node.props.src ?? "https://placehold.co/640x360")} alt={String(node.props.alt ?? "Image")} style={{ height: Number(node.props.height ?? 180), objectFit: "cover", width: "100%" }} />;
+  }
+  if (node.type === "Button" || node.type === "FloatingActionButton") {
+    return <button key={node.id} className={`${className} ${toneClass(node.props.tone)}`} onClick={onClick} type="button">{String(node.props.text ?? node.props.icon ?? "Button")}</button>;
+  }
 
   if (node.type === "TopBar") {
     return <div key={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Top Bar")}</div>;
   }
+  if (node.type === "Navbar") {
+    return <div key={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Navbar")}</div>;
+  }
 
   if (node.type === "BottomTabBar") {
-    const tabs = Number(node.props.tabs ?? 4);
+    const childTabs = node.children.filter((child) => child.type === "Tabs");
+    const tabs = childTabs.length > 0 ? childTabs.length : Number(node.props.tabs ?? 4);
     return (
       <div key={node.id} className={`${className} tabbar`} onClick={onClick}>
-        {Array.from({ length: tabs }).map((_, index) => <span key={`${node.id}-${index}`} className="tab">Tab {index + 1}</span>)}
+        {Array.from({ length: tabs }).map((_, index) => <span key={`${node.id}-${index}`} className="tab">{childTabs[index] ? String(childTabs[index].props.label ?? `Tab ${index + 1}`) : `Tab ${index + 1}`}</span>)}
       </div>
     );
   }
 
-  if (node.type === "TextField") {
+  if (node.type === "TextField" || node.type === "Input") {
     return (
       <div key={node.id} className={className} onClick={onClick}>
         <label>{String(node.props.label ?? "Label")}</label>
-        <input placeholder={String(node.props.placeholder ?? "Type...")} readOnly />
+        <input placeholder={String(node.props.placeholder ?? "Type...")} readOnly style={{ minHeight: Number(node.props.minHeight ?? 44) }} />
+      </div>
+    );
+  }
+  if (node.type === "SearchBar") {
+    return <input key={node.id} className={`${className} search`} onClick={onClick} readOnly placeholder={String(node.props.placeholder ?? "Search")} style={{ minHeight: Number(node.props.minHeight ?? 44) }} />;
+  }
+  if (node.type === "TextArea") {
+    return <textarea key={node.id} className={className} onClick={onClick} readOnly rows={Number(node.props.rows ?? 4)} placeholder={String(node.props.placeholder ?? "Write here...")} />;
+  }
+  if (node.type === "Checkbox" || node.type === "Toggle") {
+    return <label key={node.id} className={className} onClick={onClick}><input type="checkbox" checked={Boolean(node.props.checked)} readOnly /> {String(node.props.label ?? "Option")}</label>;
+  }
+  if (node.type === "Select" || node.type === "Picker" || node.type === "RadioGroup") {
+    const options = String(node.props.options ?? "One|Two|Three").split("|").map((item) => item.trim()).filter(Boolean);
+    return (
+      <div key={node.id} className={className} onClick={onClick}>
+        <label>{String(node.props.label ?? "Select")}</label>
+        <select disabled>{options.map((option) => <option key={option}>{option}</option>)}</select>
+      </div>
+    );
+  }
+  if (node.type === "List") {
+    return <ul key={node.id} className={className} onClick={onClick}>{node.children.map((child) => renderNode(child, selectedId, onSelect))}</ul>;
+  }
+  if (node.type === "ListItem") {
+    return (
+      <li key={node.id} className={`${className} list-item`} onClick={onClick}>
+        <span>{String(node.props.title ?? "Item")}</span>
+        {node.props.subtitle ? <small>{String(node.props.subtitle)}</small> : null}
+      </li>
+    );
+  }
+  if (node.type === "Table") {
+    const rows = Math.max(1, Number(node.props.rows ?? 3));
+    const cols = Math.max(1, Number(node.props.columns ?? 3));
+    return (
+      <table key={node.id} className={className} onClick={onClick}>
+        <tbody>
+          {Array.from({ length: rows }).map((_, row) => (
+            <tr key={`${node.id}-${row}`}>
+              {Array.from({ length: cols }).map((__, col) => <td key={`${node.id}-${row}-${col}`}>R{row + 1} C{col + 1}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+  if (node.type === "Modal") {
+    return (
+      <div key={node.id} className={`${className} modal-shell`} onClick={onClick}>
+        <div className="modal-card">
+          <strong>{String(node.props.title ?? "Modal")}</strong>
+          {node.children.map((child) => renderNode(child, selectedId, onSelect))}
+        </div>
       </div>
     );
   }
 
-  const containerType = node.type === "Card" ? "card" : node.type === "Stack" ? "stack" : node.type === "ScrollView" ? "scroll" : "container";
+  const containerType =
+    node.type === "Card"
+      ? "card"
+      : node.type === "Stack"
+        ? "stack"
+        : node.type === "ScrollView"
+          ? "scroll"
+          : node.type === "Grid"
+            ? "grid"
+            : node.type === "Sidebar"
+              ? "sidebar"
+              : node.type === "Form"
+                ? "form"
+                : "container";
+  const customStyle: CSSProperties = {
+    gap: spacingToPx(node.props.gap),
+    padding: spacingToPx(node.props.padding),
+    gridTemplateColumns: node.type === "Grid" ? `repeat(${Math.max(1, Number(node.props.columns ?? 2))}, minmax(0, 1fr))` : undefined
+  };
 
   return (
-    <div key={node.id} className={`${className} ${containerType}`} onClick={onClick}>
+    <div key={node.id} className={`${className} ${containerType} ${toneClass(node.props.tone)}`} onClick={onClick} style={customStyle}>
       {node.type !== "Screen" && node.type !== "ScrollView" ? <div className="node-label">{node.type}</div> : null}
       {node.children.map((child) => renderNode(child, selectedId, onSelect))}
     </div>
@@ -218,6 +327,50 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function buildNodePreset(type: string): AstNode {
+  const id = uid(type.toLowerCase());
+  if (type === "Card") {
+    return {
+      id,
+      type: "Card",
+      props: { tone: "surface", radius: "lg" },
+      children: [
+        { id: uid("heading"), type: "Heading", props: { text: "Card title", size: "lg" }, children: [] },
+        { id: uid("text"), type: "Text", props: { text: "Card content" }, children: [] }
+      ]
+    };
+  }
+  if (type === "Button") return { id, type: "Button", props: { text: "Action", tone: "primary", minHeight: 44, size: "md" }, children: [] };
+  if (type === "Text") return { id, type: "Text", props: { text: "New text" }, children: [] };
+  if (type === "Heading") return { id, type: "Heading", props: { text: "Heading", size: "xl" }, children: [] };
+  if (type === "Image") return { id, type: "Image", props: { src: "https://placehold.co/640x360", alt: "Image", height: 180 }, children: [] };
+  if (type === "List") {
+    return {
+      id,
+      type: "List",
+      props: {},
+      children: [
+        { id: uid("li"), type: "ListItem", props: { title: "Item one", subtitle: "Details" }, children: [] },
+        { id: uid("li"), type: "ListItem", props: { title: "Item two", subtitle: "Details" }, children: [] }
+      ]
+    };
+  }
+  if (type === "TextField") return { id, type: "TextField", props: { label: "Label", placeholder: "Type...", minHeight: 44 }, children: [] };
+  if (type === "SearchBar") return { id, type: "SearchBar", props: { placeholder: "Search...", minHeight: 44 }, children: [] };
+  if (type === "Checkbox") return { id, type: "Checkbox", props: { label: "Option", checked: false }, children: [] };
+  if (type === "Toggle") return { id, type: "Toggle", props: { label: "Enabled", checked: false }, children: [] };
+  if (type === "Select") return { id, type: "Select", props: { label: "Select", options: "One|Two|Three" }, children: [] };
+  if (type === "Table") return { id, type: "Table", props: { rows: 3, columns: 3 }, children: [] };
+  if (type === "Modal") return { id, type: "Modal", props: { title: "Modal", open: true }, children: [{ id: uid("text"), type: "Text", props: { text: "Modal body" }, children: [] }] };
+  if (type === "Badge") return { id, type: "Badge", props: { text: "New", tone: "accent" }, children: [] };
+  if (type === "Avatar") return { id, type: "Avatar", props: { initials: "AB", size: "md" }, children: [] };
+  if (type === "Spacer") return { id, type: "Spacer", props: { size: "md" }, children: [] };
+  if (type === "Grid") return { id, type: "Grid", props: { columns: 2, gap: "md" }, children: [] };
+  if (type === "Container") return { id, type: "Container", props: { padding: "md", tone: "surface", radius: "md" }, children: [] };
+  if (type === "Form") return { id, type: "Form", props: { title: "Form" }, children: [] };
+  return { id, type: "Text", props: { text: `Unsupported preset for ${type}` }, children: [] };
+}
+
 function buildThemeFromAccent(accent: string) {
   const base = chroma(accent);
   const accent2 = base.set("hsl.h", (base.get("hsl.h") + 38) % 360).saturate(0.4).hex();
@@ -252,6 +405,7 @@ export function App() {
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
+  const [insertComponentType, setInsertComponentType] = useState("Card");
   const [previewDocument, setPreviewDocument] = useState<DocumentAst | null>(null);
   const [zoom, setZoom] = useState(1);
   const [spacePressed, setSpacePressed] = useState(false);
@@ -292,6 +446,15 @@ export function App() {
       "Make this screen look more premium",
       "On all screens, increase heading hierarchy",
       "On screen 2, add a CTA button at the bottom"
+    ],
+    []
+  );
+  const insertComponentOptions = useMemo(
+    () => [
+      "Card", "Container", "Grid", "Spacer",
+      "Heading", "Text", "Image", "Badge", "Avatar", "List",
+      "Button", "TextField", "SearchBar", "Checkbox", "Toggle", "Select",
+      "Form", "Table", "Modal"
     ],
     []
   );
@@ -663,24 +826,9 @@ export function App() {
     await refreshVersions(projectId, response.fileId);
   }
 
-  async function addNode(type: "Card" | "Button" | "Text") {
+  async function addNode(type: string) {
     if (!selectedId) return;
-
-    const id = uid(type.toLowerCase());
-    const node: AstNode =
-      type === "Card"
-        ? {
-            id,
-            type: "Card",
-            props: { tone: "surface", radius: "lg" },
-            children: [
-              { id: uid("heading"), type: "Heading", props: { text: "Card title", size: "lg" }, children: [] },
-              { id: uid("text"), type: "Text", props: { text: "Card content" }, children: [] }
-            ]
-          }
-        : type === "Button"
-          ? { id, type: "Button", props: { text: "Action", tone: "primary", minHeight: 44, size: "md" }, children: [] }
-          : { id, type: "Text", props: { text: "New text" }, children: [] };
+    const node = buildNodePreset(type);
 
     await applyPatch([{ opId: uid("add"), type: "addNode", parentId: selectedId, node }], `Add ${type}`);
   }
@@ -969,7 +1117,9 @@ export function App() {
   const tokenSelects: Record<string, string[]> = {
     tone: ["primary", "secondary", "accent", "surface", "muted", "danger"],
     radius: ["none", "sm", "md", "lg", "xl"],
-    size: ["sm", "md", "lg", "xl", "2xl"]
+    size: ["sm", "md", "lg", "xl", "2xl"],
+    gap: ["xs", "sm", "md", "lg", "xl"],
+    padding: ["xs", "sm", "md", "lg", "xl"]
   };
 
   if (!activeDocument) return <div className="loading">Loading project...</div>;
@@ -1170,9 +1320,15 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="inspector-actions">
-                  <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Add Card</button>
-                  <button type="button" className="btn-soft" onClick={() => void addNode("Button")}>Add Button</button>
-                  <button type="button" className="btn-soft" onClick={() => void addNode("Text")}>Add Text</button>
+                  <select value={insertComponentType} onChange={(event) => setInsertComponentType(event.target.value)}>
+                    {insertComponentOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn-soft" onClick={() => void addNode(insertComponentType)}>Add Selected</button>
+                  <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Quick Card</button>
                   <button type="button" className="btn-danger" onClick={() => void removeSelected()}>Remove</button>
                 </div>
               </>

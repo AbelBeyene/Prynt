@@ -783,9 +783,117 @@ function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function containsAny(text: string, words: string[]): boolean {
+  return words.some((word) => text.includes(word));
+}
+
+function buildDashboardStack(): AstNode {
+  return createNode("Stack", nextId("stack"), { gap: "lg", padding: "lg" }, [
+    createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+      createNode("Heading", nextId("heading"), { text: "Overview", size: "xl" }),
+      createNode("Text", nextId("text"), { text: "Your weekly metrics at a glance." }),
+      createNode("Badge", nextId("badge"), { text: "Live", tone: "accent" })
+    ]),
+    createNode("Grid", nextId("grid"), { columns: 2, gap: "md" }, [
+      createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+        createNode("Heading", nextId("heading"), { text: "Revenue", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "$42,300" })
+      ]),
+      createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+        createNode("Heading", nextId("heading"), { text: "Orders", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "1,294" })
+      ])
+    ]),
+    createNode("List", nextId("list"), { dense: false }, [
+      createNode("ListItem", nextId("li"), { title: "New signups", subtitle: "24 today" }),
+      createNode("ListItem", nextId("li"), { title: "Churn risk", subtitle: "4 accounts" })
+    ])
+  ]);
+}
+
+function buildLoginStack(): AstNode {
+  return createNode("Stack", nextId("stack"), { gap: "md", padding: "lg" }, [
+    createNode("Heading", nextId("heading"), { text: "Welcome back", size: "2xl" }),
+    createNode("Text", nextId("text"), { text: "Sign in to continue." }),
+    createNode("Form", nextId("form"), { title: "Sign in" }, [
+      createNode("TextField", nextId("email"), { label: "Email", placeholder: "you@company.com", minHeight: 44 }),
+      createNode("TextField", nextId("password"), { label: "Password", placeholder: "••••••••", minHeight: 44 }),
+      createNode("Checkbox", nextId("remember"), { label: "Remember me", checked: true }),
+      createNode("Button", nextId("signin"), { text: "Sign In", tone: "primary", size: "md", minHeight: 44 })
+    ])
+  ]);
+}
+
+function buildProfileStack(): AstNode {
+  return createNode("Stack", nextId("stack"), { gap: "md", padding: "lg" }, [
+    createNode("Card", nextId("card"), { tone: "surface", radius: "xl" }, [
+      createNode("Avatar", nextId("avatar"), { initials: "AB", size: "lg" }),
+      createNode("Heading", nextId("heading"), { text: "Alex Brown", size: "xl" }),
+      createNode("Text", nextId("text"), { text: "Product Designer" }),
+      createNode("Badge", nextId("badge"), { text: "Pro", tone: "primary" })
+    ]),
+    createNode("List", nextId("list"), {}, [
+      createNode("ListItem", nextId("li"), { title: "Orders", subtitle: "View purchase history" }),
+      createNode("ListItem", nextId("li"), { title: "Notifications", subtitle: "Manage alerts" }),
+      createNode("ListItem", nextId("li"), { title: "Privacy", subtitle: "Security settings" })
+    ])
+  ]);
+}
+
+function buildCommerceStack(): AstNode {
+  return createNode("Stack", nextId("stack"), { gap: "lg", padding: "lg" }, [
+    createNode("SearchBar", nextId("search"), { placeholder: "Search restaurants", minHeight: 44 }),
+    createNode("Grid", nextId("grid"), { columns: 2, gap: "md" }, [
+      createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+        createNode("Heading", nextId("heading"), { text: "Burgers", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "24 places" })
+      ]),
+      createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+        createNode("Heading", nextId("heading"), { text: "Sushi", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "18 places" })
+      ])
+    ]),
+    createNode("List", nextId("list"), {}, [
+      createNode("ListItem", nextId("li"), { title: "Urban Slice", subtitle: "25-35 min" }),
+      createNode("ListItem", nextId("li"), { title: "Green Bowl", subtitle: "15-20 min" })
+    ])
+  ]);
+}
+
 function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedNodeId?: string): PatchOp[] {
   const lower = prompt.toLowerCase();
   const patches: PatchOp[] = [];
+  const stackTarget = findFirstNodeByType(document.root, "Stack");
+  const scrollTarget = findFirstNodeByType(document.root, "ScrollView");
+  const targetParent = selectedNodeId ?? stackTarget?.id ?? scrollTarget?.id ?? document.root.id;
+
+  if (containsAny(lower, ["dashboard", "analytics", "overview"])) {
+    if (stackTarget) {
+      patches.push({ opId: nextId("replace"), type: "replaceNode", targetId: stackTarget.id, node: buildDashboardStack() });
+    }
+    patches.push({ opId: nextId("title"), type: "updateProps", targetId: document.root.id, props: { title: "Dashboard" } });
+  }
+
+  if (containsAny(lower, ["login", "sign in", "auth", "authentication"])) {
+    if (stackTarget) {
+      patches.push({ opId: nextId("replace"), type: "replaceNode", targetId: stackTarget.id, node: buildLoginStack() });
+    }
+    patches.push({ opId: nextId("title"), type: "updateProps", targetId: document.root.id, props: { title: "Sign In" } });
+  }
+
+  if (containsAny(lower, ["profile", "account", "user page"])) {
+    if (stackTarget) {
+      patches.push({ opId: nextId("replace"), type: "replaceNode", targetId: stackTarget.id, node: buildProfileStack() });
+    }
+    patches.push({ opId: nextId("title"), type: "updateProps", targetId: document.root.id, props: { title: "Profile" } });
+  }
+
+  if (containsAny(lower, ["food", "delivery", "restaurant", "shop", "ecommerce", "store"])) {
+    if (stackTarget) {
+      patches.push({ opId: nextId("replace"), type: "replaceNode", targetId: stackTarget.id, node: buildCommerceStack() });
+    }
+    patches.push({ opId: nextId("title"), type: "updateProps", targetId: document.root.id, props: { title: "Discover" } });
+  }
 
   if (lower.includes("replace") && lower.includes("sidebar") && lower.includes("tabs")) {
     const sidebar = findFirstNodeByType(document.root, "Sidebar");
@@ -801,17 +909,15 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
   }
 
   if (lower.includes("add") && lower.includes("search")) {
-    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
     patches.push({
       opId: nextId("add"),
       type: "addNode",
       parentId: targetParent,
-      node: createNode("TextField", nextId("search"), { label: "Search", placeholder: "Search...", minHeight: 44 })
+      node: createNode("SearchBar", nextId("search"), { placeholder: "Search...", minHeight: 44 })
     });
   }
 
   if (lower.includes("add") && lower.includes("button")) {
-    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
     patches.push({
       opId: nextId("add"),
       type: "addNode",
@@ -821,7 +927,6 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
   }
 
   if (lower.includes("add") && lower.includes("card")) {
-    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
     patches.push({
       opId: nextId("add"),
       type: "addNode",
@@ -830,6 +935,70 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
         createNode("Heading", nextId("heading"), { text: "New Card", size: "lg" }),
         createNode("Text", nextId("text"), { text: "Generated from prompt" })
       ])
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("list")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("List", nextId("list"), {}, [
+        createNode("ListItem", nextId("li"), { title: "First item", subtitle: "Details" }),
+        createNode("ListItem", nextId("li"), { title: "Second item", subtitle: "Details" })
+      ])
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("form")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Form", nextId("form"), { title: "Contact" }, [
+        createNode("TextField", nextId("name"), { label: "Name", placeholder: "Jane Doe", minHeight: 44 }),
+        createNode("TextArea", nextId("message"), { placeholder: "Message", rows: 4 }),
+        createNode("Button", nextId("submit"), { text: "Submit", tone: "primary", size: "md", minHeight: 44 })
+      ])
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("table")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Table", nextId("table"), { rows: 4, columns: 3 })
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("modal")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: document.root.id,
+      node: createNode("Modal", nextId("modal"), { title: "Details", open: true }, [
+        createNode("Text", nextId("text"), { text: "Modal content" }),
+        createNode("Button", nextId("close"), { text: "Close", tone: "secondary", size: "md", minHeight: 44 })
+      ])
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("badge")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Badge", nextId("badge"), { text: "New", tone: "accent" })
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("avatar")) {
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Avatar", nextId("avatar"), { initials: "AB", size: "lg" })
     });
   }
 
@@ -855,6 +1024,22 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
           type: "updateProps",
           targetId: node.id,
           props: { size: "2xl" }
+        });
+      }
+      if (node.type === "Button") {
+        patches.push({
+          opId: nextId("style"),
+          type: "updateProps",
+          targetId: node.id,
+          props: { tone: "primary", size: "lg", minHeight: 48 }
+        });
+      }
+      if (node.type === "Stack") {
+        patches.push({
+          opId: nextId("style"),
+          type: "updateProps",
+          targetId: node.id,
+          props: { gap: "lg", padding: "lg" }
         });
       }
 
@@ -907,55 +1092,77 @@ export function buildStubInitialDocument(projectId: string): DocumentAst {
       props: { title: "Dashboard" },
       children: [
         {
-          id: "topbar-1",
-          type: "TopBar",
-          props: { title: "Dashboard" },
-          children: []
-        },
-        {
-          id: "scroll-1",
-          type: "ScrollView",
-          props: { padding: "md" },
+          id: "safearea-1",
+          type: "SafeArea",
+          props: {},
           children: [
             {
-              id: "stack-1",
-              type: "Stack",
-              props: { gap: "md", padding: "md" },
+              id: "topbar-1",
+              type: "TopBar",
+              props: { title: "Dashboard" },
+              children: []
+            },
+            {
+              id: "scroll-1",
+              type: "ScrollView",
+              props: { padding: "md" },
               children: [
                 {
-                  id: "card-1",
-                  type: "Card",
-                  props: { tone: "surface", radius: "lg" },
+                  id: "stack-1",
+                  type: "Stack",
+                  props: { gap: "md", padding: "md" },
                   children: [
                     {
-                      id: "heading-1",
-                      type: "Heading",
-                      props: { text: "Overview", size: "xl" },
+                      id: "search-1",
+                      type: "SearchBar",
+                      props: { placeholder: "Search metrics", minHeight: 44 },
                       children: []
                     },
                     {
-                      id: "text-1",
-                      type: "Text",
-                      props: { text: "Today's activity and performance" },
-                      children: []
+                      id: "card-1",
+                      type: "Card",
+                      props: { tone: "surface", radius: "lg" },
+                      children: [
+                        {
+                          id: "heading-1",
+                          type: "Heading",
+                          props: { text: "Overview", size: "xl" },
+                          children: []
+                        },
+                        {
+                          id: "text-1",
+                          type: "Text",
+                          props: { text: "Today's activity and performance" },
+                          children: []
+                        },
+                        {
+                          id: "button-1",
+                          type: "Button",
+                          props: { text: "View details", tone: "primary", minHeight: 44, size: "md" },
+                          children: []
+                        }
+                      ]
                     },
                     {
-                      id: "button-1",
-                      type: "Button",
-                      props: { text: "View details", tone: "primary", minHeight: 44, size: "md" },
-                      children: []
+                      id: "list-1",
+                      type: "List",
+                      props: {},
+                      children: [
+                        { id: "li-1", type: "ListItem", props: { title: "Visitors", subtitle: "2,340 today" }, children: [] },
+                        { id: "li-2", type: "ListItem", props: { title: "Conversion", subtitle: "4.8%" }, children: [] }
+                      ]
                     }
                   ]
                 }
               ]
+            },
+            {
+              id: "tabbar-1",
+              type: "BottomTabBar",
+              props: { tabs: 4 },
+              children: []
             }
           ]
-        },
-        {
-          id: "tabbar-1",
-          type: "BottomTabBar",
-          props: { tabs: 4 },
-          children: []
         }
       ]
     }

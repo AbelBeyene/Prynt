@@ -117,7 +117,8 @@ function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): 
       continue;
     }
 
-    if ((node.type === "Button" || node.type === "TextField") && typeof node.props.minHeight === "number" && node.props.minHeight < 44) {
+    const touchCritical = new Set(["Button", "TextField", "SearchBar", "Input", "Select", "Picker"]);
+    if (touchCritical.has(node.type) && typeof node.props.minHeight === "number" && node.props.minHeight < 44) {
       issues.push({
         code: "touch_target_small",
         path: `node:${node.id}`,
