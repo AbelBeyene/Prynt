@@ -149,6 +149,7 @@ export function App() {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
+  const [isApplyingPrompt, setIsApplyingPrompt] = useState(false);
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
@@ -304,27 +305,44 @@ export function App() {
   }
 
   async function handlePrompt() {
-    if (!projectId || !activeFileId) return;
-
-    const response = await apiRequest<{ fileName: string; source: "llm" | "rule"; response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] } }>(`/projects/${projectId}/prompt`, {
-      method: "POST",
-      body: JSON.stringify({ fileId: activeFileId, prompt, selectedNodeId: selectedId ?? undefined })
-    });
-
-    patchFileDocument(response.response.fileId, response.response.document);
-    if (response.response.fileId !== activeFileId) {
-      const targetPhone = canvasItems.find((item) => item.type === "phone" && item.fileId === response.response.fileId);
-      if (targetPhone) {
-        setSelectedCanvasItemId(targetPhone.id);
-      }
+    if (!projectId || !activeFileId) {
+      setStatus("No active screen selected.");
+      return;
     }
-    setPreviewDocument(null);
-    setStatus(
-      response.response.applied
-        ? `Prompt applied on ${response.fileName} (${response.source})`
-        : response.response.repairSuggestions.join(" | ")
-    );
-    await refreshVersions(projectId, response.response.fileId);
+
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      setStatus("Type a prompt before applying.");
+      return;
+    }
+
+    setIsApplyingPrompt(true);
+    setStatus("Applying prompt...");
+    try {
+      const response = await apiRequest<{ fileName: string; source: "llm" | "rule"; response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] } }>(`/projects/${projectId}/prompt`, {
+        method: "POST",
+        body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
+      });
+
+      patchFileDocument(response.response.fileId, response.response.document);
+      if (response.response.fileId !== activeFileId) {
+        const targetPhone = canvasItems.find((item) => item.type === "phone" && item.fileId === response.response.fileId);
+        if (targetPhone) {
+          setSelectedCanvasItemId(targetPhone.id);
+        }
+      }
+      setPreviewDocument(null);
+      setStatus(
+        response.response.applied
+          ? `Prompt applied on ${response.fileName} (${response.source})`
+          : response.response.repairSuggestions.join(" | ")
+      );
+      await refreshVersions(projectId, response.response.fileId);
+    } catch (error) {
+      setStatus(`Prompt failed: ${(error as Error).message}`);
+    } finally {
+      setIsApplyingPrompt(false);
+    }
   }
 
   async function handleUndo() {
@@ -498,8 +516,20 @@ export function App() {
       </header>
 
       <section className="prompt-row">
-        <input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe your UI change..." />
-        <button type="button" onClick={() => void handlePrompt()}>Apply Prompt</button>
+        <input
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handlePrompt();
+            }
+          }}
+          placeholder="Describe your UI change..."
+        />
+        <button type="button" onClick={() => void handlePrompt()} disabled={isApplyingPrompt}>
+          {isApplyingPrompt ? "Applying..." : "Apply Prompt"}
+        </button>
         <button type="button" onClick={() => void handleRepair()}>Repair</button>
         <button type="button" onClick={() => void handleUndo()}>Undo</button>
         <button type="button" onClick={() => void handleRedo()}>Redo</button>
