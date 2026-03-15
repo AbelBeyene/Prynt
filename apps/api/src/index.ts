@@ -112,6 +112,7 @@ export interface GenerateFromPromptRequest {
   fileId?: string;
   prompt: string;
   selectedNodeId?: string;
+  selectedScope?: "node" | "section" | "similar" | "screen" | "project";
 }
 
 export interface PromptTargetResult {
@@ -556,12 +557,12 @@ export class EditorApiService {
 
   async simulatePrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptSimulationResult> {
     const { project, file: initialFile } = this.resolveFile(projectId, request.fileId);
-    const intent = this.buildIntentSpec(project, request.prompt, initialFile);
+    const intent = this.buildIntentSpec(project, request.prompt, initialFile, request.selectedScope);
 
     const results: PromptTargetResult[] = [];
     for (const targetFileId of intent.targetFileIds) {
       const target = this.requireFile(project, targetFileId);
-      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, false);
+      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, request.selectedScope, false);
       results.push(generated);
     }
 
@@ -574,12 +575,12 @@ export class EditorApiService {
 
   async generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptResult> {
     const { project, file: initialFile } = this.resolveFile(projectId, request.fileId);
-    const intent = this.buildIntentSpec(project, request.prompt, initialFile);
+    const intent = this.buildIntentSpec(project, request.prompt, initialFile, request.selectedScope);
 
     const results: PromptTargetResult[] = [];
     for (const targetFileId of intent.targetFileIds) {
       const target = this.requireFile(project, targetFileId);
-      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, true);
+      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, request.selectedScope, true);
       results.push(generated);
     }
 
@@ -676,7 +677,12 @@ export class EditorApiService {
     return { project, file };
   }
 
-  private buildIntentSpec(project: ProjectState, prompt: string, fallback: FileState): IntentSpec {
+  private buildIntentSpec(
+    project: ProjectState,
+    prompt: string,
+    fallback: FileState,
+    selectedScope?: "node" | "section" | "similar" | "screen" | "project"
+  ): IntentSpec {
     const lower = prompt.toLowerCase();
     const targetFileIds = new Set<string>();
     const warnings: string[] = [];
@@ -727,6 +733,12 @@ export class EditorApiService {
       }
     }
 
+    if (selectedScope === "project") {
+      for (const fileId of project.fileOrder) {
+        targetFileIds.add(fileId);
+      }
+    }
+
     if (targetFileIds.size === 0) {
       targetFileIds.add(fallback.fileId);
     }
@@ -763,6 +775,7 @@ export class EditorApiService {
     file: FileState,
     prompt: string,
     selectedNodeId: string | undefined,
+    selectedScope: "node" | "section" | "similar" | "screen" | "project" | undefined,
     commit: boolean
   ): Promise<PromptTargetResult> {
     if (canUseLlm()) {
@@ -785,7 +798,7 @@ export class EditorApiService {
       }
     }
 
-    const rulePatches = buildPatchesFromPrompt(file.document, prompt, selectedNodeId);
+    const rulePatches = buildPatchesFromPrompt(file.document, prompt, selectedNodeId, selectedScope);
     const ruleResponse = this.applyWithAutoRepair(file, rulePatches, `Prompt: ${prompt}`, commit);
     return {
       fileId: file.fileId,
@@ -1074,6 +1087,85 @@ function mapColorWordToTone(word: string): string | null {
   return table[word] ?? null;
 }
 
+function inferScopeFromPrompt(promptLower: string, fallback?: "node" | "section" | "similar" | "screen" | "project") {
+  if (/\b(all screens|all files|whole project|entire project)\b/.test(promptLower)) return "project";
+  if (/\b(this screen|whole screen|current screen)\b/.test(promptLower)) return "screen";
+  if (/\b(all similar|all buttons|all cards|all items like this)\b/.test(promptLower)) return "similar";
+  if (/\b(this section|section only|parent section)\b/.test(promptLower)) return "section";
+  if (/\b(this only|only this|selected only)\b/.test(promptLower)) return "node";
+  return fallback ?? "node";
+}
+
+function collectScopeTargetIds(
+  root: AstNode,
+  selectedNodeId: string,
+  scope: "node" | "section" | "similar" | "screen" | "project"
+): string[] {
+  const collectIds = (start: AstNode): string[] => {
+    const ids: string[] = [];
+    const stack: AstNode[] = [start];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      ids.push(current.id);
+      stack.push(...current.children);
+    }
+    return ids;
+  };
+
+  const collectNodes = (start: AstNode): AstNode[] => {
+    const nodes: AstNode[] = [];
+    const stack: AstNode[] = [start];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      nodes.push(current);
+      stack.push(...current.children);
+    }
+    return nodes;
+  };
+
+  const selected = findNodePath(root, selectedNodeId)?.node;
+  if (!selected) return [selectedNodeId];
+  if (scope === "screen" || scope === "project") {
+    return collectIds(root);
+  }
+  if (scope === "similar") {
+    return collectNodes(root)
+      .filter((node) => node.type === selected.type)
+      .map((node) => node.id);
+  }
+  if (scope === "section") {
+    const parentById = new Map<string, string | null>();
+    const nodeById = new Map<string, AstNode>();
+    const stack: Array<{ node: AstNode; parentId: string | null }> = [{ node: root, parentId: null }];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      nodeById.set(current.node.id, current.node);
+      parentById.set(current.node.id, current.parentId);
+      for (const child of current.node.children) {
+        stack.push({ node: child, parentId: current.node.id });
+      }
+    }
+
+    const sectionTypes = new Set(["Card", "Container", "Stack", "Grid", "Form", "ScrollView", "SafeArea"]);
+    let cursor: string | null | undefined = selectedNodeId;
+    let sectionRoot: AstNode | null = null;
+    while (cursor) {
+      const node = nodeById.get(cursor);
+      if (node && sectionTypes.has(node.type)) {
+        sectionRoot = node;
+        break;
+      }
+      cursor = parentById.get(cursor);
+    }
+    sectionRoot = sectionRoot ?? selected;
+    return collectIds(sectionRoot);
+  }
+  return [selectedNodeId];
+}
+
 function buildDashboardStack(): AstNode {
   return createNode("Stack", nextId("stack"), { gap: "lg", padding: "lg" }, [
     createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
@@ -1147,17 +1239,26 @@ function buildCommerceStack(): AstNode {
   ]);
 }
 
-function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedNodeId?: string): PatchOp[] {
+function buildPatchesFromPrompt(
+  document: DocumentAst,
+  prompt: string,
+  selectedNodeId?: string,
+  selectedScope?: "node" | "section" | "similar" | "screen" | "project"
+): PatchOp[] {
   const lower = prompt.toLowerCase();
   const patches: PatchOp[] = [];
   const stackTarget = findFirstNodeByType(document.root, "Stack");
   const scrollTarget = findFirstNodeByType(document.root, "ScrollView");
   const targetParent = selectedNodeId ?? stackTarget?.id ?? scrollTarget?.id ?? document.root.id;
   const selectedNode = selectedNodeId ? findNodePath(document.root, selectedNodeId)?.node ?? null : null;
+  const effectiveScope = inferScopeFromPrompt(lower, selectedScope);
+  const scopedTargetIds = selectedNodeId ? collectScopeTargetIds(document.root, selectedNodeId, effectiveScope) : [];
 
   if (selectedNode) {
     if (containsAny(lower, ["delete this", "remove this"])) {
-      patches.push({ opId: nextId("selected-remove"), type: "removeNode", targetId: selectedNode.id });
+      if (effectiveScope === "node") {
+        patches.push({ opId: nextId("selected-remove"), type: "removeNode", targetId: selectedNode.id });
+      }
     }
 
     const toneCapable = new Set(["Button", "Card", "Badge", "Container", "Icon", "FloatingActionButton", "PricingTable"]);
@@ -1165,75 +1266,108 @@ function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedN
     const colorAliasMatch = lower.match(/\b(red|blue|green|purple|orange|yellow|gray|grey|black|white|teal|cyan|pink)\b/);
     const colorWord = colorAliasMatch?.[1];
     const mappedTone = explicitTone ?? (colorWord ? mapColorWordToTone(colorWord) : null);
-    if (mappedTone && toneCapable.has(selectedNode.type)) {
-      patches.push({
-        opId: nextId("selected-tone"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { tone: mappedTone }
-      });
+    if (mappedTone) {
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || !toneCapable.has(candidate.type)) continue;
+        patches.push({
+          opId: nextId("selected-tone"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { tone: mappedTone }
+        });
+      }
     }
 
     if (containsAny(lower, ["rounded", "rounder"])) {
-      patches.push({
-        opId: nextId("selected-radius"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { radius: "xl" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.radius === undefined) continue;
+        patches.push({
+          opId: nextId("selected-radius"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { radius: "xl" }
+        });
+      }
     }
     if (containsAny(lower, ["less rounded", "sharper"])) {
-      patches.push({
-        opId: nextId("selected-radius"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { radius: "sm" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.radius === undefined) continue;
+        patches.push({
+          opId: nextId("selected-radius"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { radius: "sm" }
+        });
+      }
     }
 
     if (containsAny(lower, ["increase padding", "more padding"])) {
-      patches.push({
-        opId: nextId("selected-padding"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { padding: "lg" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.padding === undefined) continue;
+        patches.push({
+          opId: nextId("selected-padding"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { padding: "lg" }
+        });
+      }
     }
     if (containsAny(lower, ["reduce padding", "less padding"])) {
-      patches.push({
-        opId: nextId("selected-padding"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { padding: "sm" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.padding === undefined) continue;
+        patches.push({
+          opId: nextId("selected-padding"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { padding: "sm" }
+        });
+      }
     }
 
     if (containsAny(lower, ["bigger", "larger", "increase size"])) {
-      patches.push({
-        opId: nextId("selected-size"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { size: "lg" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.size === undefined) continue;
+        patches.push({
+          opId: nextId("selected-size"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { size: "lg" }
+        });
+      }
     }
     if (containsAny(lower, ["smaller", "decrease size"])) {
-      patches.push({
-        opId: nextId("selected-size"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { size: "sm" }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate || candidate.props.size === undefined) continue;
+        patches.push({
+          opId: nextId("selected-size"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { size: "sm" }
+        });
+      }
     }
 
     const textMatch = prompt.match(/(?:text|title|label)\s+to\s+["']([^"']+)["']/i);
     if (textMatch?.[1]) {
-      const key = selectedNode.props.text !== undefined ? "text" : selectedNode.props.title !== undefined ? "title" : "label";
-      patches.push({
-        opId: nextId("selected-text"),
-        type: "updateProps",
-        targetId: selectedNode.id,
-        props: { [key]: textMatch[1] }
-      });
+      for (const targetId of scopedTargetIds) {
+        const candidate = findNodePath(document.root, targetId)?.node;
+        if (!candidate) continue;
+        const key = candidate.props.text !== undefined ? "text" : candidate.props.title !== undefined ? "title" : candidate.props.label !== undefined ? "label" : null;
+        if (!key) continue;
+        patches.push({
+          opId: nextId("selected-text"),
+          type: "updateProps",
+          targetId: candidate.id,
+          props: { [key]: textMatch[1] }
+        });
+      }
     }
   }
 

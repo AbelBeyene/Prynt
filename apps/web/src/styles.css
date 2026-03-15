@@ -1104,6 +1104,7 @@ body {
 .context-prompt-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .context-prompt-actions button {
@@ -1115,6 +1116,33 @@ body {
   padding: 0 10px;
   cursor: pointer;
   font-size: 12px;
+}
+
+.context-scope-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.context-scope-row button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #1a2435;
+  color: #cfdbf5;
+  font-size: 10px;
+  height: 24px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.context-scope-row .context-scope-active {
+  border-color: #3572cb;
+  background: linear-gradient(180deg, #274772, #1f3658);
+}
+
+.context-preview-btn {
+  border-color: #42536f !important;
+  background: linear-gradient(180deg, #2b3a50, #233044) !important;
 }
 
 .loading {

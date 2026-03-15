@@ -99,6 +99,7 @@ interface ContextPromptState {
   x: number;
   y: number;
   text: string;
+  scope: "node" | "section" | "similar" | "screen" | "project";
 }
 
 interface DragState {
@@ -459,7 +460,7 @@ export function App() {
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
   const [promptWarnings, setPromptWarnings] = useState<string[]>([]);
   const [lastPromptSummary, setLastPromptSummary] = useState("");
-  const [contextPrompt, setContextPrompt] = useState<ContextPromptState>({ open: false, x: 240, y: 180, text: "" });
+  const [contextPrompt, setContextPrompt] = useState<ContextPromptState>({ open: false, x: 240, y: 180, text: "", scope: "node" });
   const [promptLibraryQuery, setPromptLibraryQuery] = useState("");
   const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
@@ -821,7 +822,10 @@ export function App() {
     setStatus(response.applied ? "Preview ready" : `Preview invalid: ${response.repairSuggestions.join(" | ")}`);
   }
 
-  async function handlePrompt(overridePrompt?: string) {
+  async function handlePrompt(
+    overridePrompt?: string,
+    options?: { selectedNodeId?: string; selectedScope?: "node" | "section" | "similar" | "screen" | "project" }
+  ) {
     if (!projectId || !activeFileId) {
       setStatus("No active screen selected.");
       return;
@@ -844,7 +848,12 @@ export function App() {
         results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { document: DocumentAst; applied: boolean } }>;
       }>(`/projects/${projectId}/prompt`, {
         method: "POST",
-        body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
+        body: JSON.stringify({
+          fileId: activeFileId,
+          prompt: trimmedPrompt,
+          selectedNodeId: options?.selectedNodeId ?? selectedId ?? undefined,
+          selectedScope: options?.selectedScope
+        })
       });
 
       for (const result of response.results) {
@@ -883,13 +892,16 @@ export function App() {
     await handlePrompt(text);
   }
 
-  async function handleSimulatePrompt() {
+  async function handleSimulatePrompt(
+    overridePrompt?: string,
+    options?: { selectedNodeId?: string; selectedScope?: "node" | "section" | "similar" | "screen" | "project" }
+  ) {
     if (!projectId || !activeFileId) {
       setStatus("No active screen selected.");
       return;
     }
 
-    const trimmedPrompt = prompt.trim();
+    const trimmedPrompt = (overridePrompt ?? prompt).trim();
     if (!trimmedPrompt) {
       setStatus("Type a prompt before simulating.");
       return;
@@ -903,7 +915,12 @@ export function App() {
         results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { applied: boolean; warnings: string[] } }>;
       }>(`/projects/${projectId}/prompt/simulate`, {
         method: "POST",
-        body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
+        body: JSON.stringify({
+          fileId: activeFileId,
+          prompt: trimmedPrompt,
+          selectedNodeId: options?.selectedNodeId ?? selectedId ?? undefined,
+          selectedScope: options?.selectedScope
+        })
       });
 
       setPromptConfidence(response.intent.confidence);
@@ -1252,7 +1269,8 @@ export function App() {
         open: true,
         x: Math.min(window.innerWidth - 360, Math.max(12, rect.right + 10)),
         y: Math.min(window.innerHeight - 180, Math.max(12, rect.top)),
-        text: ""
+        text: "",
+        scope: "node"
       }));
       return;
     }
@@ -1262,7 +1280,8 @@ export function App() {
       open: true,
       x: Math.max(16, window.innerWidth / 2 - 150),
       y: Math.max(16, window.innerHeight / 2 - 60),
-      text: ""
+      text: "",
+      scope: "node"
     }));
   }
 
@@ -1800,6 +1819,18 @@ export function App() {
             <span>Prompt Selected Node</span>
             <button type="button" onClick={() => setContextPrompt((current) => ({ ...current, open: false }))}>Close</button>
           </div>
+          <div className="context-scope-row">
+            {(["node", "section", "similar", "screen", "project"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                className={contextPrompt.scope === scope ? "context-scope-active" : ""}
+                onClick={() => setContextPrompt((current) => ({ ...current, scope }))}
+              >
+                {scope}
+              </button>
+            ))}
+          </div>
           <textarea
             value={contextPrompt.text}
             onChange={(event) => setContextPrompt((current) => ({ ...current, text: event.target.value }))}
@@ -1808,7 +1839,10 @@ export function App() {
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                 event.preventDefault();
                 setPrompt(contextPrompt.text);
-                void handlePrompt(contextPrompt.text);
+                void handlePrompt(contextPrompt.text, {
+                  ...(selectedId ? { selectedNodeId: selectedId } : {}),
+                  selectedScope: contextPrompt.scope
+                });
                 setContextPrompt((current) => ({ ...current, open: false }));
               }
               if (event.key === "Escape") {
@@ -1820,9 +1854,25 @@ export function App() {
           <div className="context-prompt-actions">
             <button
               type="button"
+              className="context-preview-btn"
               onClick={() => {
                 setPrompt(contextPrompt.text);
-                void handlePrompt(contextPrompt.text);
+                void handleSimulatePrompt(contextPrompt.text, {
+                  ...(selectedId ? { selectedNodeId: selectedId } : {}),
+                  selectedScope: contextPrompt.scope
+                });
+              }}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrompt(contextPrompt.text);
+                void handlePrompt(contextPrompt.text, {
+                  ...(selectedId ? { selectedNodeId: selectedId } : {}),
+                  selectedScope: contextPrompt.scope
+                });
                 setContextPrompt((current) => ({ ...current, open: false }));
               }}
             >
