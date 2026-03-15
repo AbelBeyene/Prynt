@@ -224,6 +224,39 @@ export function App() {
   }, [activeFile?.fileId]);
 
   useEffect(() => {
+    const raw = localStorage.getItem("prynt-ui-settings");
+    if (!raw) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as {
+        accent?: string;
+        accent2?: string;
+        panel?: string;
+        device?: DevicePreset;
+      };
+      if (parsed.accent) setUiAccent(parsed.accent);
+      if (parsed.accent2) setUiAccent2(parsed.accent2);
+      if (parsed.panel) setUiPanelTone(parsed.panel);
+      if (parsed.device) setDevice(parsed.device);
+    } catch {
+      // ignore invalid persisted state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "prynt-ui-settings",
+      JSON.stringify({
+        accent: uiAccent,
+        accent2: uiAccent2,
+        panel: uiPanelTone,
+        device
+      })
+    );
+  }, [uiAccent, uiAccent2, uiPanelTone, device]);
+
+  useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--accent", uiAccent);
     root.style.setProperty("--accent-2", uiAccent2);
@@ -598,6 +631,28 @@ export function App() {
     setSelectedCanvasItemId(id);
   }
 
+  function removeSelectedCanvasItem() {
+    if (!selectedCanvasItemId) return;
+    const current = canvasItems.find((item) => item.id === selectedCanvasItemId);
+    if (!current) return;
+    if (current.type === "phone") {
+      setStatus("Use artboard controls to manage screens.");
+      return;
+    }
+    setCanvasItems((items) => items.filter((item) => item.id !== selectedCanvasItemId));
+    setSelectedCanvasItemId(canvasItems.find((item) => item.type === "phone")?.id ?? null);
+  }
+
+  function fitToViewport() {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const fit = Math.min(viewport.clientWidth / 1100, viewport.clientHeight / 900);
+    const nextZoom = clampZoom(fit);
+    setZoom(nextZoom);
+    viewport.scrollLeft = 520;
+    viewport.scrollTop = 220;
+  }
+
   function handleCanvasBackgroundMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
     if (!(spacePressed || event.button === 1)) return;
     const viewport = viewportRef.current;
@@ -676,6 +731,32 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void handlePrompt();
+        }
+        if (event.key === "=" || event.key === "+") {
+          event.preventDefault();
+          setZoom((current) => clampZoom(current + 0.1));
+        }
+        if (event.key === "-") {
+          event.preventDefault();
+          setZoom((current) => clampZoom(current - 0.1));
+        }
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (canvasHoverRef.current) {
+          removeSelectedCanvasItem();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const canvasDocument = (previewDocument ?? activeDocument) as DocumentAst | null;
 
   const tokenSelects: Record<string, string[]> = {
@@ -751,9 +832,12 @@ export function App() {
               <button type="button" onClick={() => setZoom((v) => clampZoom(v - 0.1))}>-</button>
               <span>{Math.round(zoom * 100)}%</span>
               <button type="button" onClick={() => setZoom((v) => clampZoom(v + 0.1))}>+</button>
+              <button type="button" onClick={() => setZoom(1)}>100%</button>
+              <button type="button" onClick={() => fitToViewport()}>Fit</button>
               <button type="button" onClick={() => void addCanvasItem("note")}>Add Note</button>
               <button type="button" onClick={() => void addCanvasItem("frame")}>Add Frame</button>
               <button type="button" onClick={() => void addCanvasItem("phone")}>Add Screen</button>
+              <button type="button" className="btn-danger" onClick={() => removeSelectedCanvasItem()}>Delete Item</button>
             </div>
           </div>
 
