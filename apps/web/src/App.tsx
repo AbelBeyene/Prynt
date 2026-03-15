@@ -93,6 +93,38 @@ function findNode(root: AstNode, id: string): AstNode | null {
   return null;
 }
 
+function collectVisibleLayerIds(root: AstNode, query: string): Set<string> {
+  const q = query.trim().toLowerCase();
+  const all = flatten(root);
+  if (!q) {
+    return new Set(all.map((node) => node.id));
+  }
+
+  const parentById = new Map<string, string | null>();
+  const stack: Array<{ node: AstNode; parentId: string | null }> = [{ node: root, parentId: null }];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    parentById.set(current.node.id, current.parentId);
+    for (const child of current.node.children) {
+      stack.push({ node: child, parentId: current.node.id });
+    }
+  }
+
+  const matched = all.filter((node) => node.type.toLowerCase().includes(q) || node.id.toLowerCase().includes(q));
+  const visible = new Set<string>();
+
+  for (const node of matched) {
+    let cursor: string | null | undefined = node.id;
+    while (cursor) {
+      visible.add(cursor);
+      cursor = parentById.get(cursor);
+    }
+  }
+
+  return visible;
+}
+
 function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: string) => void): JSX.Element {
   const selected = selectedId === node.id;
   const className = `node node-${node.type.toLowerCase()}${selected ? " selected" : ""}`;
@@ -138,14 +170,26 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
   );
 }
 
-function LayerTree({ node, selectedId, onSelect }: { node: AstNode; selectedId: string | null; onSelect: (id: string) => void }) {
+function LayerTree({
+  node,
+  selectedId,
+  onSelect,
+  visibleIds
+}: {
+  node: AstNode;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  visibleIds: Set<string>;
+}) {
+  if (!visibleIds.has(node.id)) return null;
+
   return (
     <div className="layer-item">
       <button type="button" className={selectedId === node.id ? "layer-selected" : ""} onClick={() => onSelect(node.id)}>
         {node.type} ({node.id})
       </button>
       <div className="layer-children">
-        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} />)}
+        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} visibleIds={visibleIds} />)}
       </div>
     </div>
   );
@@ -176,6 +220,7 @@ export function App() {
   const [isApplyingPrompt, setIsApplyingPrompt] = useState(false);
   const [isSimulatingPrompt, setIsSimulatingPrompt] = useState(false);
   const [artboardSearch, setArtboardSearch] = useState("");
+  const [layerSearch, setLayerSearch] = useState("");
   const [artboardRename, setArtboardRename] = useState("");
   const [uiAccent, setUiAccent] = useState("#5eead4");
   const [uiAccent2, setUiAccent2] = useState("#60a5fa");
@@ -239,6 +284,10 @@ export function App() {
     if (!activeDocument || !selectedId) return null;
     return findNode(activeDocument.root, selectedId);
   }, [activeDocument, selectedId]);
+  const visibleLayerIds = useMemo(
+    () => (activeDocument ? collectVisibleLayerIds(activeDocument.root, layerSearch) : new Set<string>()),
+    [activeDocument, layerSearch]
+  );
 
   useEffect(() => {
     setArtboardRename(activeFile?.name ?? "");
@@ -915,7 +964,8 @@ export function App() {
           <div className="panel-head">
             <h2>Layers</h2>
           </div>
-          <LayerTree node={activeDocument.root} selectedId={selectedId} onSelect={setSelectedId} />
+          <input className="artboard-search" value={layerSearch} onChange={(event) => setLayerSearch(event.target.value)} placeholder="Search layers..." />
+          <LayerTree node={activeDocument.root} selectedId={selectedId} onSelect={setSelectedId} visibleIds={visibleLayerIds} />
         </aside>
 
         <section className="panel canvas-panel">

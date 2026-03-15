@@ -77,6 +77,8 @@ npm run build
 - `POST /projects/:projectId/prompt`
 - `POST /projects/:projectId/intent`
 - `POST /projects/:projectId/prompt/simulate`
+- `GET /projects/:projectId/prompt/history`
+- `GET /projects/:projectId/prompt/suggestions`
 - `POST /projects/:projectId/patch`
 - `POST /projects/:projectId/patch/preview`
 - `POST /projects/:projectId/undo`
