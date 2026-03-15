@@ -29,7 +29,9 @@ const api = new EditorApiService();
 const PORT = Number(process.env.PORT ?? 4000);
 const metrics = {
   requestsTotal: 0,
-  requestsError: 0
+  requestsError: 0,
+  promptRequests: 0,
+  promptRejected: 0
 };
 
 class ApiError extends Error {
@@ -60,6 +62,20 @@ function route(handler: (req: Request, res: Response) => Promise<void> | void) {
       next(error);
     }
   };
+}
+
+function sanitizePrompt(raw: unknown): string {
+  const prompt = String(raw ?? "").trim();
+  if (!prompt) {
+    throw new ApiError("Prompt cannot be empty.", 400);
+  }
+  if (prompt.length > 4000) {
+    throw new ApiError("Prompt is too long (max 4000 characters).", 400);
+  }
+  if (/<script|<\/script>|javascript:/i.test(prompt)) {
+    throw new ApiError("Prompt contains unsafe content.", 400);
+  }
+  return prompt;
 }
 
 app.use(cors());
@@ -154,11 +170,25 @@ app.post("/projects/:projectId/patch/preview", route((req, res) => {
 }));
 
 app.post("/projects/:projectId/prompt", route(async (req, res) => {
+  metrics.promptRequests += 1;
+  try {
+    req.body.prompt = sanitizePrompt(req.body?.prompt);
+  } catch (error) {
+    metrics.promptRejected += 1;
+    throw error;
+  }
   const response = await api.generateFromPrompt(req.params.projectId!, req.body);
   res.json(response);
 }));
 
 app.post("/projects/:projectId/prompt/simulate", route(async (req, res) => {
+  metrics.promptRequests += 1;
+  try {
+    req.body.prompt = sanitizePrompt(req.body?.prompt);
+  } catch (error) {
+    metrics.promptRejected += 1;
+    throw error;
+  }
   const response = await api.simulatePrompt(req.params.projectId!, req.body);
   res.json(response);
 }));

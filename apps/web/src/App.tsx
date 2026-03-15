@@ -80,6 +80,13 @@ interface ExportResult {
   content: string;
 }
 
+interface ProjectSummary {
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
+  fileCount: number;
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -418,6 +425,8 @@ function buildThemeFromAccent(accent: string) {
 
 export function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [availableProjects, setAvailableProjects] = useState<ProjectSummary[]>([]);
+  const [projectSwitcherId, setProjectSwitcherId] = useState("");
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
@@ -625,6 +634,52 @@ export function App() {
     }
   }
 
+  async function refreshProjects() {
+    try {
+      const response = await apiRequest<{ projects: ProjectSummary[] }>("/projects");
+      setAvailableProjects(response.projects);
+    } catch {
+      setAvailableProjects([]);
+    }
+  }
+
+  async function openProject(targetProjectId?: string) {
+    const created = await apiRequest<{ projectId: string; files: ProjectFile[] }>("/projects", {
+      method: "POST",
+      body: JSON.stringify(targetProjectId ? { projectId: targetProjectId } : {})
+    });
+
+    setProjectId(created.projectId);
+    setProjectSwitcherId(created.projectId);
+    setFiles(created.files);
+    const phones = created.files.map((file, index) => ({
+      id: index === 0 ? "phone-main" : uid("phone"),
+      type: "phone" as const,
+      fileId: file.fileId,
+      x: 760 + index * 460,
+      y: 380,
+      width: phoneWidth,
+      height: 760
+    }));
+    setCanvasItems(phones);
+    setSelectedCanvasItemId(phones[0]?.id ?? null);
+    setSelectedId(created.files[0]?.document.root.id ?? null);
+
+    if (created.files[0]) {
+      await refreshVersions(created.projectId, created.files[0].fileId);
+      await refreshPromptLibrary(created.projectId, created.files[0].fileId);
+    }
+    await refreshTemplates();
+    await refreshProjects();
+    setStatus(`Project ready: ${created.projectId}`);
+
+    const viewport = viewportRef.current;
+    if (viewport) {
+      viewport.scrollLeft = 520;
+      viewport.scrollTop = 260;
+    }
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === "Space") setSpacePressed(true);
@@ -680,32 +735,7 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const created = await apiRequest<{ projectId: string; files: ProjectFile[] }>("/projects", {
-        method: "POST",
-        body: JSON.stringify({})
-      });
-
-      setProjectId(created.projectId);
-      setFiles(created.files);
-
-      const firstFile = created.files[0];
-      if (firstFile) {
-        setSelectedId(firstFile.document.root.id);
-        setCanvasItems([
-          { id: "phone-main", type: "phone", fileId: firstFile.fileId, x: 760, y: 380, width: phoneWidth, height: 760 }
-        ]);
-        await refreshVersions(created.projectId, firstFile.fileId);
-        await refreshPromptLibrary(created.projectId, firstFile.fileId);
-        await refreshTemplates();
-      }
-
-      setStatus("Project ready");
-
-      const viewport = viewportRef.current;
-      if (viewport) {
-        viewport.scrollLeft = 520;
-        viewport.scrollTop = 260;
-      }
+      await openProject();
     })();
   }, []);
 
@@ -1308,6 +1338,16 @@ export function App() {
         </div>
         <div className="workspace-tools-right">
           <button type="button" onClick={() => setIsCommandOpen(true)}>Command</button>
+          <select value={projectSwitcherId} onChange={(event) => setProjectSwitcherId(event.target.value)}>
+            <option value="">Select Project</option>
+            {availableProjects.map((project) => (
+              <option key={project.projectId} value={project.projectId}>
+                {project.projectId} ({project.fileCount})
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => void openProject(projectSwitcherId || undefined)}>Open</button>
+          <button type="button" onClick={() => void openProject()}>New Project</button>
           <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportResult["format"])}>
             <option value="json">Export JSON</option>
             <option value="dsl">Export DSL</option>
