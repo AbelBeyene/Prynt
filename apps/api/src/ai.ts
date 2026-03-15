@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+import { z } from "zod";
 import type { AstNode, DocumentAst } from "@prynt/ast";
 import type { PatchOp } from "@prynt/patches";
 
@@ -20,6 +22,62 @@ const opAliases: Record<string, PatchOp["type"]> = {
   wrap: "wrapNode",
   wrapnode: "wrapNode"
 };
+
+const patchTypeSchema = z.enum(["addNode", "removeNode", "moveNode", "updateProps", "replaceNode", "wrapNode"]);
+
+const astNodeSchema: z.ZodType<AstNode> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    type: z.string(),
+    props: z.record(z.unknown()),
+    children: z.array(astNodeSchema)
+  })
+);
+
+const addPatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("addNode"),
+  parentId: z.string(),
+  node: astNodeSchema,
+  index: z.number().optional()
+});
+
+const removePatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("removeNode"),
+  targetId: z.string()
+});
+
+const movePatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("moveNode"),
+  targetId: z.string(),
+  toParentId: z.string(),
+  index: z.number().optional()
+});
+
+const updatePatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("updateProps"),
+  targetId: z.string(),
+  props: z.record(z.unknown())
+});
+
+const replacePatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("replaceNode"),
+  targetId: z.string(),
+  node: astNodeSchema
+});
+
+const wrapPatchSchema = z.object({
+  opId: z.string(),
+  type: z.literal("wrapNode"),
+  targetId: z.string(),
+  wrapper: astNodeSchema
+});
+
+const patchSchema = z.union([addPatchSchema, removePatchSchema, movePatchSchema, updatePatchSchema, replacePatchSchema, wrapPatchSchema]);
 
 function extractJsonPayload(text: string): string {
   const fenced = text.match(/```json\s*([\s\S]*?)```/i);
@@ -50,9 +108,7 @@ function coerceNode(input: unknown): AstNode | null {
   const id = typeof input.id === "string" && input.id.length > 0 ? input.id : uid(type.toLowerCase());
   const props = isObject(input.props) ? input.props : {};
   const rawChildren = Array.isArray(input.children) ? input.children : [];
-  const children: AstNode[] = rawChildren
-    .map((child) => coerceNode(child))
-    .filter((child): child is AstNode => child !== null);
+  const children: AstNode[] = rawChildren.map((child) => coerceNode(child)).filter((child): child is AstNode => child !== null);
 
   return { id, type, props, children };
 }
@@ -92,7 +148,7 @@ function resolveOpType(raw: Record<string, unknown>): PatchOp["type"] | null {
   if (!mapped || !allowedOps.has(mapped)) {
     return null;
   }
-  return mapped;
+  return patchTypeSchema.safeParse(mapped).success ? mapped : null;
 }
 
 function normalizePatch(raw: Record<string, unknown>, selectedNodeId: string | undefined, rootId: string): PatchOp | null {
@@ -115,27 +171,25 @@ function normalizePatch(raw: Record<string, unknown>, selectedNodeId: string | u
       (typeof raw.targetId === "string" && raw.targetId) ||
       selectedNodeId ||
       rootId;
-    const patch: PatchOp = {
+
+    const candidate: unknown = {
       opId,
       type,
       parentId,
-      node
+      node,
+      ...(typeof raw.index === "number" ? { index: raw.index } : {})
     };
-    if (typeof raw.index === "number") {
-      (patch as Extract<PatchOp, { type: "addNode" }>).index = raw.index;
-    }
-    return patch;
+    const parsed = addPatchSchema.safeParse(candidate);
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   if (type === "removeNode") {
-    const targetId =
-      (typeof raw.targetId === "string" && raw.targetId) ||
-      (typeof raw.target === "string" && raw.target) ||
-      pathInfo.targetId;
+    const targetId = (typeof raw.targetId === "string" && raw.targetId) || (typeof raw.target === "string" && raw.target) || pathInfo.targetId;
     if (!targetId) {
       return null;
     }
-    return { opId, type, targetId };
+    const parsed = removePatchSchema.safeParse({ opId, type, targetId });
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   if (type === "moveNode") {
@@ -154,16 +208,15 @@ function normalizePatch(raw: Record<string, unknown>, selectedNodeId: string | u
       return null;
     }
 
-    const patch: PatchOp = {
+    const candidate: unknown = {
       opId,
       type,
       targetId,
-      toParentId
+      toParentId,
+      ...(typeof raw.index === "number" ? { index: raw.index } : {})
     };
-    if (typeof raw.index === "number") {
-      (patch as Extract<PatchOp, { type: "moveNode" }>).index = raw.index;
-    }
-    return patch;
+    const parsed = movePatchSchema.safeParse(candidate);
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   if (type === "updateProps") {
@@ -186,36 +239,28 @@ function normalizePatch(raw: Record<string, unknown>, selectedNodeId: string | u
       return null;
     }
 
-    return {
-      opId,
-      type,
-      targetId,
-      props
-    };
+    const parsed = updatePatchSchema.safeParse({ opId, type, targetId, props });
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   if (type === "replaceNode") {
-    const targetId =
-      (typeof raw.targetId === "string" && raw.targetId) ||
-      (typeof raw.target === "string" && raw.target) ||
-      pathInfo.targetId;
+    const targetId = (typeof raw.targetId === "string" && raw.targetId) || (typeof raw.target === "string" && raw.target) || pathInfo.targetId;
     const node = coerceNode(raw.node ?? raw.value);
     if (!targetId || !node) {
       return null;
     }
-    return { opId, type, targetId, node };
+    const parsed = replacePatchSchema.safeParse({ opId, type, targetId, node });
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   if (type === "wrapNode") {
-    const targetId =
-      (typeof raw.targetId === "string" && raw.targetId) ||
-      (typeof raw.target === "string" && raw.target) ||
-      pathInfo.targetId;
+    const targetId = (typeof raw.targetId === "string" && raw.targetId) || (typeof raw.target === "string" && raw.target) || pathInfo.targetId;
     const wrapper = coerceNode(raw.wrapper ?? raw.node ?? raw.value);
     if (!targetId || !wrapper) {
       return null;
     }
-    return { opId, type, targetId, wrapper };
+    const parsed = wrapPatchSchema.safeParse({ opId, type, targetId, wrapper });
+    return parsed.success ? (parsed.data as PatchOp) : null;
   }
 
   return null;
@@ -244,7 +289,10 @@ function sanitizePatches(value: unknown, selectedNodeId: string | undefined, roo
     }
     const normalized = normalizePatch(raw, selectedNodeId, rootId);
     if (normalized) {
-      valid.push(normalized);
+      const parsed = patchSchema.safeParse(normalized);
+      if (parsed.success) {
+        valid.push(parsed.data as PatchOp);
+      }
     }
   }
 
@@ -341,8 +389,8 @@ export async function generatePatchesFromLlm(prompt: string, document: DocumentA
     throw new Error("Model returned empty content.");
   }
 
-  const jsonPayload = extractJsonPayload(content);
-  const parsed = JSON.parse(jsonPayload) as unknown;
+  const repaired = jsonrepair(extractJsonPayload(content));
+  const parsed = JSON.parse(repaired) as unknown;
   const patches = sanitizePatches(parsed, selectedNodeId, document.root.id);
 
   if (patches.length === 0) {

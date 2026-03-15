@@ -5,6 +5,7 @@ import type { PatchOp } from "@prynt/patches";
 import { buildRepairPlan } from "@prynt/repair";
 import { suggestRepairs, validateDocument } from "@prynt/validator";
 import { canUseLlm, generatePatchesFromLlm } from "./ai.js";
+import Fuse from "fuse.js";
 
 export interface VersionSnapshot {
   id: number;
@@ -433,6 +434,23 @@ export class EditorApiService {
       const file = this.requireFile(project, fileId);
       if (lower.includes(file.name.toLowerCase())) {
         targetFileIds.add(file.fileId);
+      }
+    }
+
+    if (targetFileIds.size === 0) {
+      const candidates = project.fileOrder.map((fileId) => {
+        const file = this.requireFile(project, fileId);
+        return { fileId: file.fileId, name: file.name };
+      });
+      const fuse = new Fuse(candidates, { keys: ["name"], threshold: 0.35, includeScore: true });
+      const fuzzy = fuse.search(prompt, { limit: 2 });
+      for (const match of fuzzy) {
+        if ((match.score ?? 1) <= 0.35) {
+          targetFileIds.add(match.item.fileId);
+        }
+      }
+      if (fuzzy.length > 0 && targetFileIds.size > 0) {
+        warnings.push("Used fuzzy target matching from screen names.");
       }
     }
 
