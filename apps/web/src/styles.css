@@ -93,6 +93,7 @@ body {
 .workspace-tools button,
 .workspace-tools select,
 .inspector-panel input,
+.inspector-actions button,
 .versions button,
 .layer-item button,
 .mode-tabs button,
@@ -108,6 +109,7 @@ body {
 }
 
 .workspace-tools button,
+.inspector-actions button,
 .versions button,
 .layer-item button,
 .mode-tabs button,
@@ -116,6 +118,7 @@ body {
 }
 
 .workspace-tools button:hover,
+.inspector-actions button:hover,
 .versions button:hover,
 .layer-item button:hover,
 .mode-tabs button:hover,
@@ -125,6 +128,7 @@ body {
 }
 
 .workspace-tools button:active,
+.inspector-actions button:active,
 .versions button:active,
 .layer-item button:active,
 .mode-tabs button:active,
@@ -135,6 +139,7 @@ body {
 }
 
 .workspace-tools button:focus-visible,
+.inspector-actions button:focus-visible,
 .versions button:focus-visible,
 .layer-item button:focus-visible,
 .mode-tabs button:focus-visible,
