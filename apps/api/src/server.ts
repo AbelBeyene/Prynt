@@ -16,24 +16,40 @@ app.get("/health", (_req, res) => {
 app.post("/projects", (req, res) => {
   const projectId = String(req.body?.projectId ?? `project-${Date.now()}`);
   const document = buildStubInitialDocument(projectId);
-  const project = api.createProject(projectId, document);
+  api.createProject(projectId, document);
+
   res.status(201).json({
     projectId,
-    document: project.document,
-    versions: project.versions
+    files: api.listFiles(projectId),
+    versions: api.listVersions(projectId)
   });
 });
 
 app.get("/projects/:projectId", (req, res) => {
   try {
-    const project = api.getProject(req.params.projectId);
     res.json({
       projectId: req.params.projectId,
-      document: project.document,
-      versions: project.versions
+      files: api.listFiles(req.params.projectId)
     });
   } catch (error) {
     res.status(404).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/projects/:projectId/files", (req, res) => {
+  try {
+    res.json({ files: api.listFiles(req.params.projectId) });
+  } catch (error) {
+    res.status(404).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/projects/:projectId/files", (req, res) => {
+  try {
+    const file = api.createFile(req.params.projectId, req.body ?? {});
+    res.status(201).json(file);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -66,7 +82,7 @@ app.post("/projects/:projectId/prompt", (req, res) => {
 
 app.post("/projects/:projectId/undo", (req, res) => {
   try {
-    const response = api.undo(req.params.projectId);
+    const response = api.undo(req.params.projectId, req.body?.fileId);
     res.json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -75,7 +91,7 @@ app.post("/projects/:projectId/undo", (req, res) => {
 
 app.post("/projects/:projectId/redo", (req, res) => {
   try {
-    const response = api.redo(req.params.projectId);
+    const response = api.redo(req.params.projectId, req.body?.fileId);
     res.json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -93,7 +109,7 @@ app.post("/projects/:projectId/repair/suggest", (req, res) => {
 
 app.post("/projects/:projectId/repair/apply", (req, res) => {
   try {
-    const response = api.repairApply(req.params.projectId);
+    const response = api.repairApply(req.params.projectId, req.body?.fileId);
     res.json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -102,7 +118,8 @@ app.post("/projects/:projectId/repair/apply", (req, res) => {
 
 app.get("/projects/:projectId/versions", (req, res) => {
   try {
-    const versions = api.listVersions(req.params.projectId);
+    const fileId = typeof req.query.fileId === "string" ? req.query.fileId : undefined;
+    const versions = api.listVersions(req.params.projectId, fileId);
     res.json({ versions });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -111,7 +128,8 @@ app.get("/projects/:projectId/versions", (req, res) => {
 
 app.get("/projects/:projectId/dsl", (req, res) => {
   try {
-    const dsl = api.getDsl(req.params.projectId);
+    const fileId = typeof req.query.fileId === "string" ? req.query.fileId : undefined;
+    const dsl = api.getDsl(req.params.projectId, fileId);
     res.json({ dsl });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -121,7 +139,7 @@ app.get("/projects/:projectId/dsl", (req, res) => {
 app.post("/projects/:projectId/versions/:versionId/restore", (req, res) => {
   try {
     const versionId = Number(req.params.versionId);
-    const response = api.restoreVersion(req.params.projectId, versionId);
+    const response = api.restoreVersion(req.params.projectId, versionId, req.body?.fileId);
     res.json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });

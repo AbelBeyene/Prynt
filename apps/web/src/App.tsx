@@ -20,6 +20,13 @@ interface CanvasItem {
   width: number;
   height: number;
   text?: string;
+  fileId?: string;
+}
+
+interface ProjectFile {
+  fileId: string;
+  name: string;
+  document: DocumentAst;
 }
 
 interface VersionSnapshot {
@@ -35,29 +42,19 @@ interface DragState {
   startScrollLeft?: number;
   startScrollTop?: number;
   itemId?: string;
-  itemX?: number;
-  itemY?: number;
 }
 
 function parseValue(value: string): unknown {
-  if (value === "true") {
-    return true;
-  }
-  if (value === "false") {
-    return false;
-  }
+  if (value === "true") return true;
+  if (value === "false") return false;
   const asNumber = Number(value);
-  if (!Number.isNaN(asNumber) && value.trim() !== "") {
-    return asNumber;
-  }
+  if (!Number.isNaN(asNumber) && value.trim() !== "") return asNumber;
   return value;
 }
 
 function flatten(node: AstNode, output: AstNode[] = []): AstNode[] {
   output.push(node);
-  for (const child of node.children) {
-    flatten(child, output);
-  }
+  for (const child of node.children) flatten(child, output);
   return output;
 }
 
@@ -65,12 +62,8 @@ function findNode(root: AstNode, id: string): AstNode | null {
   const stack: AstNode[] = [root];
   while (stack.length > 0) {
     const current = stack.pop();
-    if (!current) {
-      continue;
-    }
-    if (current.id === id) {
-      return current;
-    }
+    if (!current) continue;
+    if (current.id === id) return current;
     stack.push(...current.children);
   }
   return null;
@@ -85,47 +78,19 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
     onSelect(node.id);
   };
 
-  if (node.type === "Heading") {
-    return (
-      <h2 key={node.id} className={className} onClick={onClick}>
-        {String(node.props.text ?? "Heading")}
-      </h2>
-    );
-  }
-
-  if (node.type === "Text") {
-    return (
-      <p key={node.id} className={className} onClick={onClick}>
-        {String(node.props.text ?? "Text")}
-      </p>
-    );
-  }
-
-  if (node.type === "Button") {
-    return (
-      <button key={node.id} className={className} onClick={onClick} type="button">
-        {String(node.props.text ?? "Button")}
-      </button>
-    );
-  }
+  if (node.type === "Heading") return <h2 key={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Heading")}</h2>;
+  if (node.type === "Text") return <p key={node.id} className={className} onClick={onClick}>{String(node.props.text ?? "Text")}</p>;
+  if (node.type === "Button") return <button key={node.id} className={className} onClick={onClick} type="button">{String(node.props.text ?? "Button")}</button>;
 
   if (node.type === "TopBar") {
-    return (
-      <div key={node.id} className={`${className} topbar`} onClick={onClick}>
-        {String(node.props.title ?? "Top Bar")}
-      </div>
-    );
+    return <div key={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Top Bar")}</div>;
   }
 
   if (node.type === "BottomTabBar") {
     const tabs = Number(node.props.tabs ?? 4);
     return (
       <div key={node.id} className={`${className} tabbar`} onClick={onClick}>
-        {Array.from({ length: tabs }).map((_, index) => (
-          <span key={`${node.id}-${index}`} className="tab">
-            Tab {index + 1}
-          </span>
-        ))}
+        {Array.from({ length: tabs }).map((_, index) => <span key={`${node.id}-${index}`} className="tab">Tab {index + 1}</span>)}
       </div>
     );
   }
@@ -156,9 +121,7 @@ function LayerTree({ node, selectedId, onSelect }: { node: AstNode; selectedId: 
         {node.type} ({node.id})
       </button>
       <div className="layer-children">
-        {node.children.map((child) => (
-          <LayerTree key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} />
-        ))}
+        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} />)}
       </div>
     </div>
   );
@@ -169,9 +132,7 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...options
   });
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
+  if (!response.ok) throw new Error(await response.text());
   return (await response.json()) as T;
 }
 
@@ -179,9 +140,13 @@ function clampZoom(value: number): number {
   return Math.min(2.5, Math.max(0.3, value));
 }
 
+function uid(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [document, setDocument] = useState<DocumentAst | null>(null);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
   const [device, setDevice] = useState<DevicePreset>("iphone");
@@ -198,38 +163,33 @@ export function App() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
 
-  const phoneWidth = useMemo(() => {
-    if (device === "android") {
-      return 360;
-    }
-    if (device === "tablet") {
-      return 768;
-    }
-    return 390;
-  }, [device]);
+  const phoneWidth = useMemo(() => (device === "android" ? 360 : device === "tablet" ? 768 : 390), [device]);
+
+  const selectedCanvasItem = useMemo(() => canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null, [canvasItems, selectedCanvasItemId]);
+  const activeFileId = selectedCanvasItem?.type === "phone" && selectedCanvasItem.fileId ? selectedCanvasItem.fileId : files[0]?.fileId;
+  const activeFile = useMemo(() => files.find((file) => file.fileId === activeFileId) ?? null, [files, activeFileId]);
+  const activeDocument = activeFile?.document ?? null;
 
   const selectedNode = useMemo(() => {
-    if (!document || !selectedId) {
-      return null;
-    }
-    return findNode(document.root, selectedId);
-  }, [document, selectedId]);
+    if (!activeDocument || !selectedId) return null;
+    return findNode(activeDocument.root, selectedId);
+  }, [activeDocument, selectedId]);
 
-  async function refreshVersions(activeProjectId: string) {
-    const response = await apiRequest<{ versions: VersionSnapshot[] }>(`/projects/${activeProjectId}/versions`);
+  function patchFileDocument(fileId: string, document: DocumentAst) {
+    setFiles((current) => current.map((file) => (file.fileId === fileId ? { ...file, document } : file)));
+  }
+
+  async function refreshVersions(currentProjectId: string, fileId: string) {
+    const response = await apiRequest<{ versions: VersionSnapshot[] }>(`/projects/${currentProjectId}/versions?fileId=${encodeURIComponent(fileId)}`);
     setVersions(response.versions.slice().reverse());
   }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === "Space") {
-        setSpacePressed(true);
-      }
+      if (event.code === "Space") setSpacePressed(true);
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") {
-        setSpacePressed(false);
-      }
+      if (event.code === "Space") setSpacePressed(false);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -242,43 +202,26 @@ export function App() {
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
       const dragging = dragRef.current;
-      if (!dragging) {
-        return;
-      }
+      if (!dragging) return;
 
       if (dragging.mode === "pan") {
         const viewport = viewportRef.current;
-        if (!viewport || dragging.startScrollLeft === undefined || dragging.startScrollTop === undefined) {
-          return;
-        }
+        if (!viewport || dragging.startScrollLeft === undefined || dragging.startScrollTop === undefined) return;
         viewport.scrollLeft = dragging.startScrollLeft - (event.clientX - dragging.startX);
         viewport.scrollTop = dragging.startScrollTop - (event.clientY - dragging.startY);
       }
 
-      if (dragging.mode === "item") {
-        if (!dragging.itemId || dragging.itemX === undefined || dragging.itemY === undefined) {
-          return;
-        }
+      if (dragging.mode === "item" && dragging.itemId) {
         const dx = (event.clientX - dragging.startX) / zoom;
         const dy = (event.clientY - dragging.startY) / zoom;
-
         setCanvasItems((current) =>
           current.map((item) =>
             item.id === dragging.itemId
-              ? {
-                  ...item,
-                  x: Math.max(0, item.x + dx),
-                  y: Math.max(0, item.y + dy)
-                }
+              ? { ...item, x: Math.max(0, item.x + dx), y: Math.max(0, item.y + dy) }
               : item
           )
         );
-
-        dragRef.current = {
-          ...dragging,
-          startX: event.clientX,
-          startY: event.clientY
-        };
+        dragRef.current = { ...dragging, startX: event.clientX, startY: event.clientY };
       }
     };
 
@@ -288,7 +231,6 @@ export function App() {
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -297,24 +239,23 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const created = await apiRequest<{ projectId: string; document: DocumentAst; versions: VersionSnapshot[] }>("/projects", {
+      const created = await apiRequest<{ projectId: string; files: ProjectFile[] }>("/projects", {
         method: "POST",
         body: JSON.stringify({})
       });
+
       setProjectId(created.projectId);
-      setDocument(created.document);
-      setSelectedId(created.document.root.id);
-      setVersions(created.versions);
-      setCanvasItems([
-        {
-          id: "phone-main",
-          type: "phone",
-          x: 760,
-          y: 380,
-          width: phoneWidth,
-          height: 760
-        }
-      ]);
+      setFiles(created.files);
+
+      const firstFile = created.files[0];
+      if (firstFile) {
+        setSelectedId(firstFile.document.root.id);
+        setCanvasItems([
+          { id: "phone-main", type: "phone", fileId: firstFile.fileId, x: 760, y: 380, width: phoneWidth, height: 760 }
+        ]);
+        await refreshVersions(created.projectId, firstFile.fileId);
+      }
+
       setStatus("Project ready");
 
       const viewport = viewportRef.current;
@@ -329,88 +270,97 @@ export function App() {
     setCanvasItems((current) => current.map((item) => (item.type === "phone" ? { ...item, width: phoneWidth } : item)));
   }, [phoneWidth]);
 
+  useEffect(() => {
+    if (!projectId || !activeFileId) return;
+    void refreshVersions(projectId, activeFileId);
+    const rootId = activeFile?.document.root.id;
+    if (rootId) setSelectedId(rootId);
+  }, [projectId, activeFileId]);
+
   async function applyPatch(patches: PatchOp[], reason: string) {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ applied: boolean; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch`, {
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ applied: boolean; fileId: string; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch`, {
       method: "POST",
-      body: JSON.stringify({ patches, reason })
+      body: JSON.stringify({ fileId: activeFileId, patches, reason })
     });
-    setDocument(response.document);
+
+    patchFileDocument(response.fileId, response.document);
     setPreviewDocument(null);
     setStatus(response.applied ? `Applied: ${reason}` : `Rejected: ${response.repairSuggestions.join(" | ")}`);
-    await refreshVersions(projectId);
+    await refreshVersions(projectId, response.fileId);
   }
 
   async function previewPatch(patches: PatchOp[]) {
-    if (!projectId) {
-      return;
-    }
+    if (!projectId || !activeFileId) return;
+
     const response = await apiRequest<{ applied: boolean; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch/preview`, {
       method: "POST",
-      body: JSON.stringify({ patches, reason: "Preview" })
+      body: JSON.stringify({ fileId: activeFileId, patches, reason: "Preview" })
     });
+
     setPreviewDocument(response.document);
     setStatus(response.applied ? "Preview ready" : `Preview invalid: ${response.repairSuggestions.join(" | ")}`);
   }
 
   async function handlePrompt() {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ response: { document: DocumentAst; applied: boolean; repairSuggestions: string[] } }>(`/projects/${projectId}/prompt`, {
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] } }>(`/projects/${projectId}/prompt`, {
       method: "POST",
-      body: JSON.stringify({ prompt, selectedNodeId: selectedId ?? undefined })
+      body: JSON.stringify({ fileId: activeFileId, prompt, selectedNodeId: selectedId ?? undefined })
     });
-    setDocument(response.response.document);
+
+    patchFileDocument(response.response.fileId, response.response.document);
     setPreviewDocument(null);
     setStatus(response.response.applied ? "Prompt applied" : response.response.repairSuggestions.join(" | "));
-    await refreshVersions(projectId);
+    await refreshVersions(projectId, response.response.fileId);
   }
 
   async function handleUndo() {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ document: DocumentAst; applied: boolean; repairSuggestions: string[] }>(`/projects/${projectId}/undo`, {
-      method: "POST"
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] }>(`/projects/${projectId}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ fileId: activeFileId })
     });
-    setDocument(response.document);
+
+    patchFileDocument(response.fileId, response.document);
     setPreviewDocument(null);
     setStatus(response.applied ? "Undo" : response.repairSuggestions.join(" | "));
   }
 
   async function handleRedo() {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ document: DocumentAst; applied: boolean; repairSuggestions: string[] }>(`/projects/${projectId}/redo`, {
-      method: "POST"
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] }>(`/projects/${projectId}/redo`, {
+      method: "POST",
+      body: JSON.stringify({ fileId: activeFileId })
     });
-    setDocument(response.document);
+
+    patchFileDocument(response.fileId, response.document);
     setPreviewDocument(null);
     setStatus(response.applied ? "Redo" : response.repairSuggestions.join(" | "));
   }
 
   async function handleRepair() {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ document: DocumentAst; applied: boolean }>(`/projects/${projectId}/repair/apply`, {
-      method: "POST"
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ fileId: string; document: DocumentAst; applied: boolean }>(`/projects/${projectId}/repair/apply`, {
+      method: "POST",
+      body: JSON.stringify({ fileId: activeFileId })
     });
-    setDocument(response.document);
+
+    patchFileDocument(response.fileId, response.document);
     setPreviewDocument(null);
     setStatus(response.applied ? "Auto repair applied" : "No repairs needed");
-    await refreshVersions(projectId);
+    await refreshVersions(projectId, response.fileId);
   }
 
   async function addNode(type: "Card" | "Button" | "Text") {
-    if (!selectedId) {
-      return;
-    }
-    const id = `${type.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!selectedId) return;
+
+    const id = uid(type.toLowerCase());
     const node: AstNode =
       type === "Card"
         ? {
@@ -418,77 +368,44 @@ export function App() {
             type: "Card",
             props: { tone: "surface", radius: "lg" },
             children: [
-              { id: `heading-${id}`, type: "Heading", props: { text: "Card title", size: "lg" }, children: [] },
-              { id: `text-${id}`, type: "Text", props: { text: "Card content" }, children: [] }
+              { id: uid("heading"), type: "Heading", props: { text: "Card title", size: "lg" }, children: [] },
+              { id: uid("text"), type: "Text", props: { text: "Card content" }, children: [] }
             ]
           }
         : type === "Button"
           ? { id, type: "Button", props: { text: "Action", tone: "primary", minHeight: 44, size: "md" }, children: [] }
           : { id, type: "Text", props: { text: "New text" }, children: [] };
 
-    await applyPatch(
-      [
-        {
-          opId: `add-${id}`,
-          type: "addNode",
-          parentId: selectedId,
-          node
-        }
-      ],
-      `Add ${type}`
-    );
+    await applyPatch([{ opId: uid("add"), type: "addNode", parentId: selectedId, node }], `Add ${type}`);
   }
 
   async function removeSelected() {
-    if (!selectedId || !document || selectedId === document.root.id) {
-      return;
-    }
-    await applyPatch(
-      [
-        {
-          opId: `remove-${selectedId}`,
-          type: "removeNode",
-          targetId: selectedId
-        }
-      ],
-      "Remove node"
-    );
-    setSelectedId(document.root.id);
+    if (!selectedId || !activeDocument || selectedId === activeDocument.root.id) return;
+    await applyPatch([{ opId: uid("remove"), type: "removeNode", targetId: selectedId }], "Remove node");
+    setSelectedId(activeDocument.root.id);
   }
 
   async function updateProp(key: string, value: string) {
-    if (!selectedId) {
-      return;
-    }
-    await applyPatch(
-      [
-        {
-          opId: `update-${selectedId}-${key}`,
-          type: "updateProps",
-          targetId: selectedId,
-          props: { [key]: parseValue(value) }
-        }
-      ],
-      `Update ${key}`
-    );
+    if (!selectedId) return;
+    await applyPatch([{ opId: uid("update"), type: "updateProps", targetId: selectedId, props: { [key]: parseValue(value) } }], `Update ${key}`);
   }
 
   async function restoreVersion(versionId: number) {
-    if (!projectId) {
-      return;
-    }
-    const response = await apiRequest<{ document: DocumentAst }>(`/projects/${projectId}/versions/${versionId}/restore`, {
-      method: "POST"
+    if (!projectId || !activeFileId) return;
+
+    const response = await apiRequest<{ fileId: string; document: DocumentAst }>(`/projects/${projectId}/versions/${versionId}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ fileId: activeFileId })
     });
-    setDocument(response.document);
+
+    patchFileDocument(response.fileId, response.document);
     setPreviewDocument(null);
     setStatus(`Restored version ${versionId}`);
   }
 
   async function runPatchPreview() {
     try {
-      const parsed = JSON.parse(patchText) as PatchOp[];
-      await previewPatch(parsed);
+      await previewPatch(JSON.parse(patchText) as PatchOp[]);
     } catch (error) {
       setStatus(`Invalid patch JSON: ${(error as Error).message}`);
     }
@@ -496,32 +413,46 @@ export function App() {
 
   async function applyPatchFromConsole() {
     try {
-      const parsed = JSON.parse(patchText) as PatchOp[];
-      await applyPatch(parsed, "Patch console apply");
+      await applyPatch(JSON.parse(patchText) as PatchOp[], "Patch console apply");
     } catch (error) {
       setStatus(`Invalid patch JSON: ${(error as Error).message}`);
     }
   }
 
-  function addCanvasItem(type: CanvasItemType) {
-    const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-    const defaults: Record<CanvasItemType, CanvasItem> = {
-      phone: { id, type: "phone", x: 1400, y: 420, width: phoneWidth, height: 760 },
+  async function addCanvasItem(type: CanvasItemType) {
+    if (!projectId) return;
+
+    if (type === "phone") {
+      const file = await apiRequest<ProjectFile>(`/projects/${projectId}/files`, {
+        method: "POST",
+        body: JSON.stringify({ name: `Screen ${files.length + 1}`, baseFileId: activeFileId })
+      });
+
+      setFiles((current) => [...current, file]);
+      const id = uid("phone");
+      setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1400, y: 420, width: phoneWidth, height: 760 }]);
+      setSelectedCanvasItemId(id);
+      setSelectedId(file.document.root.id);
+      await refreshVersions(projectId, file.fileId);
+      setStatus(`Created new artboard: ${file.name}`);
+      return;
+    }
+
+    const id = uid(type);
+    const defaults: Record<"note" | "frame", CanvasItem> = {
       note: { id, type: "note", x: 360, y: 340, width: 260, height: 180, text: "Sticky note\nWrite ideas here" },
       frame: { id, type: "frame", x: 320, y: 640, width: 520, height: 320, text: "Wireframe Area" }
     };
+
     setCanvasItems((current) => [...current, defaults[type]]);
     setSelectedCanvasItemId(id);
   }
 
   function handleCanvasBackgroundMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    if (!(spacePressed || event.button === 1)) {
-      return;
-    }
+    if (!(spacePressed || event.button === 1)) return;
     const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
+    if (!viewport) return;
+
     dragRef.current = {
       mode: "pan",
       startX: event.clientX,
@@ -533,43 +464,21 @@ export function App() {
   }
 
   function handleItemMouseDown(event: ReactMouseEvent<HTMLDivElement>, item: CanvasItem) {
-    if (event.button !== 0) {
-      return;
-    }
-    dragRef.current = {
-      mode: "item",
-      startX: event.clientX,
-      startY: event.clientY,
-      itemId: item.id,
-      itemX: item.x,
-      itemY: item.y
-    };
+    if (event.button !== 0) return;
+    dragRef.current = { mode: "item", startX: event.clientX, startY: event.clientY, itemId: item.id };
     setSelectedCanvasItemId(item.id);
     event.stopPropagation();
   }
 
   function handleCanvasWheel(event: ReactWheelEvent<HTMLDivElement>) {
-    if (!(event.ctrlKey || event.metaKey)) {
-      return;
-    }
+    if (!(event.ctrlKey || event.metaKey)) return;
     event.preventDefault();
-    const next = clampZoom(zoom + (event.deltaY < 0 ? 0.08 : -0.08));
-    setZoom(next);
+    setZoom((current) => clampZoom(current + (event.deltaY < 0 ? 0.08 : -0.08)));
   }
 
-  function zoomIn() {
-    setZoom((current) => clampZoom(current + 0.1));
-  }
+  const canvasDocument = (previewDocument ?? activeDocument) as DocumentAst | null;
 
-  function zoomOut() {
-    setZoom((current) => clampZoom(current - 0.1));
-  }
-
-  const canvasDocument = (previewDocument ?? document) as DocumentAst;
-
-  if (!document) {
-    return <div className="loading">Loading project...</div>;
-  }
+  if (!activeDocument) return <div className="loading">Loading project...</div>;
 
   return (
     <div className="app-shell">
@@ -580,18 +489,10 @@ export function App() {
 
       <section className="prompt-row">
         <input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe your UI change..." />
-        <button type="button" onClick={() => void handlePrompt()}>
-          Apply Prompt
-        </button>
-        <button type="button" onClick={() => void handleRepair()}>
-          Repair
-        </button>
-        <button type="button" onClick={() => void handleUndo()}>
-          Undo
-        </button>
-        <button type="button" onClick={() => void handleRedo()}>
-          Redo
-        </button>
+        <button type="button" onClick={() => void handlePrompt()}>Apply Prompt</button>
+        <button type="button" onClick={() => void handleRepair()}>Repair</button>
+        <button type="button" onClick={() => void handleUndo()}>Undo</button>
+        <button type="button" onClick={() => void handleRedo()}>Redo</button>
         <select value={device} onChange={(event) => setDevice(event.target.value as DevicePreset)}>
           <option value="iphone">iPhone (390)</option>
           <option value="android">Android (360)</option>
@@ -601,44 +502,62 @@ export function App() {
 
       <main className="layout-grid">
         <aside className="panel layer-panel">
+          <h2>Artboards</h2>
+          <div className="versions">
+            {files.map((file) => (
+              <button
+                key={file.fileId}
+                type="button"
+                className={activeFileId === file.fileId ? "layer-selected" : ""}
+                onClick={() => {
+                  const phone = canvasItems.find((item) => item.type === "phone" && item.fileId === file.fileId);
+                  if (phone) {
+                    setSelectedCanvasItemId(phone.id);
+                  }
+                }}
+              >
+                {file.name}
+              </button>
+            ))}
+          </div>
+
           <h2>Layers</h2>
-          <LayerTree node={document.root} selectedId={selectedId} onSelect={setSelectedId} />
+          <LayerTree node={activeDocument.root} selectedId={selectedId} onSelect={setSelectedId} />
         </aside>
 
         <section className="panel canvas-panel">
           <div className="canvas-toolbar">
             <h2>{previewDocument ? "Canvas (Preview)" : "Canvas"}</h2>
             <div className="canvas-controls">
-              <button type="button" onClick={zoomOut}>-</button>
+              <button type="button" onClick={() => setZoom((v) => clampZoom(v - 0.1))}>-</button>
               <span>{Math.round(zoom * 100)}%</span>
-              <button type="button" onClick={zoomIn}>+</button>
-              <button type="button" onClick={() => addCanvasItem("note")}>Add Note</button>
-              <button type="button" onClick={() => addCanvasItem("frame")}>Add Frame</button>
-              <button type="button" onClick={() => addCanvasItem("phone")}>Add Screen</button>
+              <button type="button" onClick={() => setZoom((v) => clampZoom(v + 0.1))}>+</button>
+              <button type="button" onClick={() => void addCanvasItem("note")}>Add Note</button>
+              <button type="button" onClick={() => void addCanvasItem("frame")}>Add Frame</button>
+              <button type="button" onClick={() => void addCanvasItem("phone")}>Add Screen</button>
             </div>
           </div>
 
-          <div
-            ref={viewportRef}
-            className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`}
-            onMouseDown={handleCanvasBackgroundMouseDown}
-            onWheel={handleCanvasWheel}
-          >
+          <div ref={viewportRef} className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`} onMouseDown={handleCanvasBackgroundMouseDown} onWheel={handleCanvasWheel}>
             <div className="canvas-stage" style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}>
               <div className="canvas-zoom-layer" style={{ transform: `scale(${zoom})` }}>
-                {canvasItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`canvas-item ${item.type} ${selectedCanvasItemId === item.id ? "active" : ""}`}
-                    style={{ left: item.x, top: item.y, width: item.width, minHeight: item.height }}
-                    onMouseDown={(event) => handleItemMouseDown(event, item)}
-                  >
-                    <div className="canvas-item-handle">{item.type.toUpperCase()}</div>
-                    {item.type === "phone" ? <div className="device-frame">{renderNode(canvasDocument.root, selectedId, setSelectedId)}</div> : null}
-                    {item.type === "note" ? <pre className="note-content">{item.text}</pre> : null}
-                    {item.type === "frame" ? <div className="frame-content">{item.text}</div> : null}
-                  </div>
-                ))}
+                {canvasItems.map((item) => {
+                  const fileForItem = item.type === "phone" ? files.find((file) => file.fileId === item.fileId) : null;
+                  const itemDocument = item.id === selectedCanvasItemId && previewDocument ? previewDocument : fileForItem?.document;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`canvas-item ${item.type} ${selectedCanvasItemId === item.id ? "active" : ""}`}
+                      style={{ left: item.x, top: item.y, width: item.width, minHeight: item.height }}
+                      onMouseDown={(event) => handleItemMouseDown(event, item)}
+                    >
+                      <div className="canvas-item-handle">{item.type.toUpperCase()} {fileForItem ? `- ${fileForItem.name}` : ""}</div>
+                      {item.type === "phone" ? <div className="device-frame">{itemDocument ? renderNode(itemDocument.root, selectedId, setSelectedId) : null}</div> : null}
+                      {item.type === "note" ? <pre className="note-content">{item.text}</pre> : null}
+                      {item.type === "frame" ? <div className="frame-content">{item.text}</div> : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -656,9 +575,7 @@ export function App() {
           {inspectorMode === "props" ? (
             selectedNode ? (
               <>
-                <p>
-                  <strong>{selectedNode.type}</strong> - {selectedNode.id}
-                </p>
+                <p><strong>{selectedNode.type}</strong> - {selectedNode.id}</p>
                 {Object.entries(selectedNode.props).map(([key, value]) => (
                   <label key={key} className="prop-field">
                     {key}
@@ -672,17 +589,15 @@ export function App() {
                   <button type="button" onClick={() => void removeSelected()}>Remove</button>
                 </div>
               </>
-            ) : (
-              <p>Select a node.</p>
-            )
+            ) : <p>Select a node.</p>
           ) : null}
 
           {inspectorMode === "source" ? (
             <>
               <h3>JSON AST</h3>
-              <textarea className="source-box" readOnly value={JSON.stringify(document, null, 2)} />
+              <textarea className="source-box" readOnly value={JSON.stringify(activeDocument, null, 2)} />
               <h3>DSL</h3>
-              <textarea className="source-box" readOnly value={serializeDocumentToDsl(document)} />
+              <textarea className="source-box" readOnly value={serializeDocumentToDsl(activeDocument)} />
             </>
           ) : null}
 
@@ -707,9 +622,7 @@ export function App() {
         </aside>
       </main>
 
-      <footer className="footer">
-        Nodes: {flatten(document.root).length} | Version: {document.version}
-      </footer>
+      <footer className="footer">Files: {files.length} | Nodes: {flatten(activeDocument.root).length} | Version: {activeDocument.version}</footer>
     </div>
   );
 }

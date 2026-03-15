@@ -12,7 +12,9 @@ export interface VersionSnapshot {
   document: DocumentAst;
 }
 
-export interface ProjectState {
+export interface FileState {
+  fileId: string;
+  name: string;
   document: DocumentAst;
   versions: VersionSnapshot[];
   undoStack: DocumentAst[];
@@ -20,13 +22,26 @@ export interface ProjectState {
   patchHistory: PatchOp[][];
 }
 
+export interface FileSummary {
+  fileId: string;
+  name: string;
+  document: DocumentAst;
+}
+
+export interface ProjectState {
+  files: Map<string, FileState>;
+  fileOrder: string[];
+}
+
 export interface ApplyPatchRequest {
+  fileId?: string;
   patches: PatchOp[];
   reason?: string;
 }
 
 export interface ApplyPatchResponse {
   applied: boolean;
+  fileId: string;
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
   repairSuggestions: string[];
@@ -37,12 +52,14 @@ export interface PreviewPatchResponse extends ApplyPatchResponse {
 }
 
 export interface GenerateFromPromptRequest {
+  fileId?: string;
   prompt: string;
   selectedNodeId?: string;
 }
 
 export interface PromptResult {
   prompt: string;
+  fileId: string;
   patches: PatchOp[];
   response: ApplyPatchResponse;
 }
@@ -57,28 +74,31 @@ export interface RepairSuggestRequest {
 
 export interface RepairApplyResponse {
   applied: boolean;
+  fileId: string;
   generatedPatches: PatchOp[];
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
+}
+
+export interface CreateFileRequest {
+  name?: string;
+  baseFileId?: string;
 }
 
 export class EditorApiService {
   private readonly projects = new Map<string, ProjectState>();
 
   createProject(projectId: string, initialDocument: DocumentAst): ProjectState {
-    const firstVersion: VersionSnapshot = {
-      id: 1,
-      reason: "Initial",
-      createdAt: new Date().toISOString(),
-      document: cloneDocument(initialDocument)
-    };
+    const fileId = "file-1";
+    const file = createFileState(fileId, "Main Screen", {
+      ...cloneDocument(initialDocument),
+      docId: fileId,
+      version: 1
+    });
 
     const project: ProjectState = {
-      document: cloneDocument(initialDocument),
-      versions: [firstVersion],
-      undoStack: [],
-      redoStack: [],
-      patchHistory: []
+      files: new Map([[fileId, file]]),
+      fileOrder: [fileId]
     };
 
     this.projects.set(projectId, project);
@@ -89,117 +109,166 @@ export class EditorApiService {
     return this.requireProject(projectId);
   }
 
-  listVersions(projectId: string): VersionSnapshot[] {
-    return this.requireProject(projectId).versions;
+  listFiles(projectId: string): FileSummary[] {
+    const project = this.requireProject(projectId);
+    return project.fileOrder.map((fileId) => {
+      const file = this.requireFile(project, fileId);
+      return {
+        fileId: file.fileId,
+        name: file.name,
+        document: cloneDocument(file.document)
+      };
+    });
   }
 
-  restoreVersion(projectId: string, versionId: number): ApplyPatchResponse {
+  createFile(projectId: string, request: CreateFileRequest): FileSummary {
     const project = this.requireProject(projectId);
-    const version = project.versions.find((item) => item.id === versionId);
+    const baseFileId = request.baseFileId ?? project.fileOrder[0];
+    if (!baseFileId) {
+      throw new Error("Project has no base file to clone.");
+    }
+    const base = this.requireFile(project, baseFileId);
+    const fileId = `file-${project.fileOrder.length + 1}`;
+
+    const cloned = cloneDocument(base.document);
+    cloned.docId = fileId;
+    cloned.version = 1;
+    cloned.root = reIdTree(cloned.root, fileId);
+    if (typeof cloned.root.props.title === "string") {
+      cloned.root.props.title = `${cloned.root.props.title} Copy`;
+    }
+
+    const next = createFileState(fileId, request.name ?? `Screen ${project.fileOrder.length + 1}`, cloned);
+    project.files.set(fileId, next);
+    project.fileOrder.push(fileId);
+
+    return {
+      fileId,
+      name: next.name,
+      document: cloneDocument(next.document)
+    };
+  }
+
+  listVersions(projectId: string, fileId?: string): VersionSnapshot[] {
+    const { file } = this.resolveFile(projectId, fileId);
+    return file.versions;
+  }
+
+  restoreVersion(projectId: string, versionId: number, fileId?: string): ApplyPatchResponse {
+    const { file } = this.resolveFile(projectId, fileId);
+    const version = file.versions.find((item) => item.id === versionId);
     if (!version) {
       throw new Error(`Version not found: ${versionId}`);
     }
 
-    project.undoStack.push(cloneDocument(project.document));
-    project.redoStack = [];
-    project.document = cloneDocument(version.document);
+    file.undoStack.push(cloneDocument(file.document));
+    file.redoStack = [];
+    file.document = cloneDocument(version.document);
 
     return {
       applied: true,
-      document: project.document,
+      fileId: file.fileId,
+      document: file.document,
       validationIssues: [],
       repairSuggestions: []
     };
   }
 
-  undo(projectId: string): ApplyPatchResponse {
-    const project = this.requireProject(projectId);
-    const previous = project.undoStack.pop();
+  undo(projectId: string, fileId?: string): ApplyPatchResponse {
+    const { file } = this.resolveFile(projectId, fileId);
+    const previous = file.undoStack.pop();
     if (!previous) {
       return {
         applied: false,
-        document: project.document,
+        fileId: file.fileId,
+        document: file.document,
         validationIssues: [],
         repairSuggestions: ["Nothing to undo."]
       };
     }
 
-    project.redoStack.push(cloneDocument(project.document));
-    project.document = previous;
+    file.redoStack.push(cloneDocument(file.document));
+    file.document = previous;
 
     return {
       applied: true,
-      document: project.document,
+      fileId: file.fileId,
+      document: file.document,
       validationIssues: [],
       repairSuggestions: []
     };
   }
 
-  redo(projectId: string): ApplyPatchResponse {
-    const project = this.requireProject(projectId);
-    const next = project.redoStack.pop();
+  redo(projectId: string, fileId?: string): ApplyPatchResponse {
+    const { file } = this.resolveFile(projectId, fileId);
+    const next = file.redoStack.pop();
     if (!next) {
       return {
         applied: false,
-        document: project.document,
+        fileId: file.fileId,
+        document: file.document,
         validationIssues: [],
         repairSuggestions: ["Nothing to redo."]
       };
     }
 
-    project.undoStack.push(cloneDocument(project.document));
-    project.document = next;
+    file.undoStack.push(cloneDocument(file.document));
+    file.document = next;
 
     return {
       applied: true,
-      document: project.document,
+      fileId: file.fileId,
+      document: file.document,
       validationIssues: [],
       repairSuggestions: []
     };
   }
 
   applyPatch(projectId: string, request: ApplyPatchRequest): ApplyPatchResponse {
-    const project = this.requireProject(projectId);
-    const result = runEditPipeline(project.document, request.patches);
+    const { file } = this.resolveFile(projectId, request.fileId);
+    const result = runEditPipeline(file.document, request.patches);
 
     if (!result.applied) {
       return {
         applied: false,
-        document: project.document,
+        fileId: file.fileId,
+        document: file.document,
         validationIssues: result.validation.issues,
         repairSuggestions: result.repairSuggestions
       };
     }
 
-    project.undoStack.push(cloneDocument(project.document));
-    project.redoStack = [];
+    file.undoStack.push(cloneDocument(file.document));
+    file.redoStack = [];
 
-    project.document = {
+    file.document = {
       ...result.document,
-      version: project.document.version + 1
+      version: file.document.version + 1
     };
-    project.patchHistory.push(request.patches);
+    file.patchHistory.push(request.patches);
 
-    project.versions.push({
-      id: project.versions.length + 1,
+    file.versions.push({
+      id: file.versions.length + 1,
       reason: request.reason ?? "Edit",
       createdAt: new Date().toISOString(),
-      document: cloneDocument(project.document)
+      document: cloneDocument(file.document)
     });
 
     return {
       applied: true,
-      document: project.document,
+      fileId: file.fileId,
+      document: file.document,
       validationIssues: [],
       repairSuggestions: []
     };
   }
 
   previewPatch(projectId: string, request: ApplyPatchRequest): PreviewPatchResponse {
-    const project = this.requireProject(projectId);
-    const result = runEditPipeline(project.document, request.patches);
+    const { file } = this.resolveFile(projectId, request.fileId);
+    const result = runEditPipeline(file.document, request.patches);
     return {
       applied: result.applied,
+      fileId: file.fileId,
       document: result.document,
       validationIssues: result.validation.issues,
       repairSuggestions: result.repairSuggestions,
@@ -208,11 +277,12 @@ export class EditorApiService {
   }
 
   generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): PromptResult {
-    const project = this.requireProject(projectId);
-    const patches = buildPatchesFromPrompt(project.document, request.prompt, request.selectedNodeId);
-    const response = this.applyPatch(projectId, { patches, reason: `Prompt: ${request.prompt}` });
+    const { file } = this.resolveFile(projectId, request.fileId);
+    const patches = buildPatchesFromPrompt(file.document, request.prompt, request.selectedNodeId);
+    const response = this.applyPatch(projectId, { fileId: file.fileId, patches, reason: `Prompt: ${request.prompt}` });
     return {
       prompt: request.prompt,
+      fileId: file.fileId,
       patches,
       response
     };
@@ -233,33 +303,45 @@ export class EditorApiService {
     };
   }
 
-  repairApply(projectId: string): RepairApplyResponse {
-    const project = this.requireProject(projectId);
-    const plan = buildRepairPlan(project.document);
+  repairApply(projectId: string, fileId?: string): RepairApplyResponse {
+    const { file } = this.resolveFile(projectId, fileId);
+    const plan = buildRepairPlan(file.document);
 
     if (plan.patches.length === 0) {
-      const validation = validateDocument(project.document);
+      const validation = validateDocument(file.document);
       return {
         applied: false,
+        fileId: file.fileId,
         generatedPatches: [],
-        document: project.document,
+        document: file.document,
         validationIssues: validation.issues
       };
     }
 
-    const result = this.applyPatch(projectId, { patches: plan.patches, reason: "Auto repair" });
+    const result = this.applyPatch(projectId, { fileId: file.fileId, patches: plan.patches, reason: "Auto repair" });
 
     return {
       applied: result.applied,
+      fileId: file.fileId,
       generatedPatches: plan.patches,
       document: result.document,
       validationIssues: result.validationIssues
     };
   }
 
-  getDsl(projectId: string): string {
+  getDsl(projectId: string, fileId?: string): string {
+    const { file } = this.resolveFile(projectId, fileId);
+    return serializeDocumentToDsl(file.document);
+  }
+
+  private resolveFile(projectId: string, fileId?: string): { project: ProjectState; file: FileState } {
     const project = this.requireProject(projectId);
-    return serializeDocumentToDsl(project.document);
+    const resolvedFileId = fileId ?? project.fileOrder[0];
+    if (!resolvedFileId) {
+      throw new Error("Project has no files.");
+    }
+    const file = this.requireFile(project, resolvedFileId);
+    return { project, file };
   }
 
   private requireProject(projectId: string): ProjectState {
@@ -269,6 +351,43 @@ export class EditorApiService {
     }
     return project;
   }
+
+  private requireFile(project: ProjectState, fileId: string): FileState {
+    const file = project.files.get(fileId);
+    if (!file) {
+      throw new Error(`File not found: ${fileId}`);
+    }
+    return file;
+  }
+}
+
+function createFileState(fileId: string, name: string, document: DocumentAst): FileState {
+  const firstVersion: VersionSnapshot = {
+    id: 1,
+    reason: "Initial",
+    createdAt: new Date().toISOString(),
+    document: cloneDocument(document)
+  };
+
+  return {
+    fileId,
+    name,
+    document,
+    versions: [firstVersion],
+    undoStack: [],
+    redoStack: [],
+    patchHistory: []
+  };
+}
+
+function reIdTree(node: AstNode, fileId: string): AstNode {
+  const clone: AstNode = {
+    ...node,
+    id: `${node.id}-${fileId}`,
+    props: { ...node.props },
+    children: node.children.map((child) => reIdTree(child, fileId))
+  };
+  return clone;
 }
 
 function findFirstNodeByType(root: AstNode, type: string): AstNode | null {
@@ -447,7 +566,7 @@ export function buildStubInitialDocument(projectId: string): DocumentAst {
                     {
                       id: "text-1",
                       type: "Text",
-                      props: { text: "Today\'s activity and performance" },
+                      props: { text: "Today's activity and performance" },
                       children: []
                     },
                     {
