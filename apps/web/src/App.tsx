@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type MouseEventHandler } from "react";
 import type { AstNode, DocumentAst } from "@prynt/ast";
+import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
 
 const API_URL = "http://localhost:4000";
 
 type DevicePreset = "iphone" | "android" | "tablet";
+type InspectorMode = "props" | "source" | "patch";
 
 interface VersionSnapshot {
   id: number;
@@ -156,6 +158,9 @@ export function App() {
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
+  const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
+  const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
+  const [previewDocument, setPreviewDocument] = useState<DocumentAst | null>(null);
 
   const width = useMemo(() => {
     if (device === "android") {
@@ -202,8 +207,21 @@ export function App() {
       body: JSON.stringify({ patches, reason })
     });
     setDocument(response.document);
+    setPreviewDocument(null);
     setStatus(response.applied ? `Applied: ${reason}` : `Rejected: ${response.repairSuggestions.join(" | ")}`);
     await refreshVersions(projectId);
+  }
+
+  async function previewPatch(patches: PatchOp[]) {
+    if (!projectId) {
+      return;
+    }
+    const response = await apiRequest<{ applied: boolean; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch/preview`, {
+      method: "POST",
+      body: JSON.stringify({ patches, reason: "Preview" })
+    });
+    setPreviewDocument(response.document);
+    setStatus(response.applied ? "Preview ready" : `Preview invalid: ${response.repairSuggestions.join(" | ")}`);
   }
 
   async function handlePrompt() {
@@ -215,6 +233,7 @@ export function App() {
       body: JSON.stringify({ prompt, selectedNodeId: selectedId ?? undefined })
     });
     setDocument(response.response.document);
+    setPreviewDocument(null);
     setStatus(response.response.applied ? "Prompt applied" : response.response.repairSuggestions.join(" | "));
     await refreshVersions(projectId);
   }
@@ -227,6 +246,7 @@ export function App() {
       method: "POST"
     });
     setDocument(response.document);
+    setPreviewDocument(null);
     setStatus(response.applied ? "Undo" : response.repairSuggestions.join(" | "));
   }
 
@@ -238,6 +258,7 @@ export function App() {
       method: "POST"
     });
     setDocument(response.document);
+    setPreviewDocument(null);
     setStatus(response.applied ? "Redo" : response.repairSuggestions.join(" | "));
   }
 
@@ -249,6 +270,7 @@ export function App() {
       method: "POST"
     });
     setDocument(response.document);
+    setPreviewDocument(null);
     setStatus(response.applied ? "Auto repair applied" : "No repairs needed");
     await refreshVersions(projectId);
   }
@@ -328,8 +350,29 @@ export function App() {
       method: "POST"
     });
     setDocument(response.document);
+    setPreviewDocument(null);
     setStatus(`Restored version ${versionId}`);
   }
+
+  async function runPatchPreview() {
+    try {
+      const parsed = JSON.parse(patchText) as PatchOp[];
+      await previewPatch(parsed);
+    } catch (error) {
+      setStatus(`Invalid patch JSON: ${(error as Error).message}`);
+    }
+  }
+
+  async function applyPatchFromConsole() {
+    try {
+      const parsed = JSON.parse(patchText) as PatchOp[];
+      await applyPatch(parsed, "Patch console apply");
+    } catch (error) {
+      setStatus(`Invalid patch JSON: ${(error as Error).message}`);
+    }
+  }
+
+  const canvasDocument = (previewDocument ?? document) as DocumentAst;
 
   if (!document) {
     return <div className="loading">Loading project...</div>;
@@ -370,35 +413,62 @@ export function App() {
         </aside>
 
         <section className="panel canvas-panel">
-          <h2>Canvas</h2>
+          <h2>{previewDocument ? "Canvas (Preview)" : "Canvas"}</h2>
           <div className="device-frame" style={{ width }}>
-            {renderNode(document.root, selectedId, setSelectedId)}
+            {renderNode(canvasDocument.root, selectedId, setSelectedId)}
           </div>
         </section>
 
         <aside className="panel inspector-panel">
           <h2>Inspector</h2>
-          {selectedNode ? (
+          <div className="mode-tabs">
+            <button type="button" onClick={() => setInspectorMode("props")}>Props</button>
+            <button type="button" onClick={() => setInspectorMode("source")}>Source</button>
+            <button type="button" onClick={() => setInspectorMode("patch")}>Patch</button>
+          </div>
+
+          {inspectorMode === "props" ? (
+            selectedNode ? (
+              <>
+                <p>
+                  <strong>{selectedNode.type}</strong> - {selectedNode.id}
+                </p>
+                {Object.entries(selectedNode.props).map(([key, value]) => (
+                  <label key={key} className="prop-field">
+                    {key}
+                    <input defaultValue={String(value)} onBlur={(event) => void updateProp(key, event.target.value)} />
+                  </label>
+                ))}
+                <div className="inspector-actions">
+                  <button type="button" onClick={() => void addNode("Card")}>Add Card</button>
+                  <button type="button" onClick={() => void addNode("Button")}>Add Button</button>
+                  <button type="button" onClick={() => void addNode("Text")}>Add Text</button>
+                  <button type="button" onClick={() => void removeSelected()}>Remove</button>
+                </div>
+              </>
+            ) : (
+              <p>Select a node.</p>
+            )
+          ) : null}
+
+          {inspectorMode === "source" ? (
             <>
-              <p>
-                <strong>{selectedNode.type}</strong> - {selectedNode.id}
-              </p>
-              {Object.entries(selectedNode.props).map(([key, value]) => (
-                <label key={key} className="prop-field">
-                  {key}
-                  <input defaultValue={String(value)} onBlur={(event) => void updateProp(key, event.target.value)} />
-                </label>
-              ))}
+              <h3>JSON AST</h3>
+              <textarea className="source-box" readOnly value={JSON.stringify(document, null, 2)} />
+              <h3>DSL</h3>
+              <textarea className="source-box" readOnly value={serializeDocumentToDsl(document)} />
+            </>
+          ) : null}
+
+          {inspectorMode === "patch" ? (
+            <>
+              <textarea className="source-box" value={patchText} onChange={(event) => setPatchText(event.target.value)} />
               <div className="inspector-actions">
-                <button type="button" onClick={() => void addNode("Card")}>Add Card</button>
-                <button type="button" onClick={() => void addNode("Button")}>Add Button</button>
-                <button type="button" onClick={() => void addNode("Text")}>Add Text</button>
-                <button type="button" onClick={() => void removeSelected()}>Remove</button>
+                <button type="button" onClick={() => void runPatchPreview()}>Preview Patch</button>
+                <button type="button" onClick={() => void applyPatchFromConsole()}>Apply Patch</button>
               </div>
             </>
-          ) : (
-            <p>Select a node.</p>
-          )}
+          ) : null}
 
           <h3>Versions</h3>
           <div className="versions">

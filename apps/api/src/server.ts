@@ -46,6 +46,15 @@ app.post("/projects/:projectId/patch", (req, res) => {
   }
 });
 
+app.post("/projects/:projectId/patch/preview", (req, res) => {
+  try {
+    const response = api.previewPatch(req.params.projectId, req.body);
+    res.json(response);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
 app.post("/projects/:projectId/prompt", (req, res) => {
   try {
     const response = api.generateFromPrompt(req.params.projectId, req.body);
@@ -95,6 +104,15 @@ app.get("/projects/:projectId/versions", (req, res) => {
   try {
     const versions = api.listVersions(req.params.projectId);
     res.json({ versions });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/projects/:projectId/dsl", (req, res) => {
+  try {
+    const dsl = api.getDsl(req.params.projectId);
+    res.json({ dsl });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }

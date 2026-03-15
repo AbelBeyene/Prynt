@@ -207,6 +207,31 @@ body {
   margin: 12px 0;
 }
 
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mode-tabs button {
+  border: 1px solid var(--border);
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.source-box {
+  width: 100%;
+  min-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
 .versions {
   display: flex;
   flex-direction: column;

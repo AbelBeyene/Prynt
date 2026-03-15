@@ -12,6 +12,7 @@
   "dependencies": {
     "@prynt/ast": "0.1.0",
     "@prynt/core": "0.1.0",
+    "@prynt/dsl": "0.1.0",
     "@prynt/patches": "0.1.0",
     "@prynt/repair": "0.1.0",
     "@prynt/validator": "0.1.0",

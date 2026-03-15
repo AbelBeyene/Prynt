@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@prynt/ast": "0.1.0",
+    "@prynt/dsl": "0.1.0",
     "@prynt/patches": "0.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

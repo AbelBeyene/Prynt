@@ -10,6 +10,7 @@
   },
   "references": [
     { "path": "../../packages/ast" },
+    { "path": "../../packages/dsl" },
     { "path": "../../packages/patches" }
   ],
   "include": ["src"]

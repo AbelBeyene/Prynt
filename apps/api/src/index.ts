@@ -1,5 +1,6 @@
 import { cloneDocument, findNodePath, type AstNode, type DocumentAst } from "@prynt/ast";
 import { runEditPipeline } from "@prynt/core";
+import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
 import { buildRepairPlan } from "@prynt/repair";
 import { suggestRepairs, validateDocument } from "@prynt/validator";
@@ -29,6 +30,10 @@ export interface ApplyPatchResponse {
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
   repairSuggestions: string[];
+}
+
+export interface PreviewPatchResponse extends ApplyPatchResponse {
+  patches: PatchOp[];
 }
 
 export interface GenerateFromPromptRequest {
@@ -190,6 +195,18 @@ export class EditorApiService {
     };
   }
 
+  previewPatch(projectId: string, request: ApplyPatchRequest): PreviewPatchResponse {
+    const project = this.requireProject(projectId);
+    const result = runEditPipeline(project.document, request.patches);
+    return {
+      applied: result.applied,
+      document: result.document,
+      validationIssues: result.validation.issues,
+      repairSuggestions: result.repairSuggestions,
+      patches: request.patches
+    };
+  }
+
   generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): PromptResult {
     const project = this.requireProject(projectId);
     const patches = buildPatchesFromPrompt(project.document, request.prompt, request.selectedNodeId);
@@ -238,6 +255,11 @@ export class EditorApiService {
       document: result.document,
       validationIssues: result.validationIssues
     };
+  }
+
+  getDsl(projectId: string): string {
+    const project = this.requireProject(projectId);
+    return serializeDocumentToDsl(project.document);
   }
 
   private requireProject(projectId: string): ProjectState {

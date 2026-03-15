@@ -9,6 +9,7 @@
   "references": [
     { "path": "../../packages/ast" },
     { "path": "../../packages/core" },
+    { "path": "../../packages/dsl" },
     { "path": "../../packages/patches" },
     { "path": "../../packages/repair" },
     { "path": "../../packages/validator" }
