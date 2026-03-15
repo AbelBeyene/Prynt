@@ -160,6 +160,11 @@ export function App() {
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
   const [isApplyingPrompt, setIsApplyingPrompt] = useState(false);
   const [isSimulatingPrompt, setIsSimulatingPrompt] = useState(false);
+  const [artboardSearch, setArtboardSearch] = useState("");
+  const [artboardRename, setArtboardRename] = useState("");
+  const [uiAccent, setUiAccent] = useState("#5eead4");
+  const [uiAccent2, setUiAccent2] = useState("#60a5fa");
+  const [uiPanelTone, setUiPanelTone] = useState("#151b27");
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
@@ -194,6 +199,11 @@ export function App() {
       })),
     [files]
   );
+  const filteredArtboardSummaries = useMemo(() => {
+    const q = artboardSearch.trim().toLowerCase();
+    if (!q) return artboardSummaries;
+    return artboardSummaries.filter((item) => item.name.toLowerCase().includes(q) || item.fileId.toLowerCase().includes(q));
+  }, [artboardSummaries, artboardSearch]);
   const quickPrompts = useMemo(
     () => [
       "On this screen, add a search bar above cards",
@@ -208,6 +218,17 @@ export function App() {
     if (!activeDocument || !selectedId) return null;
     return findNode(activeDocument.root, selectedId);
   }, [activeDocument, selectedId]);
+
+  useEffect(() => {
+    setArtboardRename(activeFile?.name ?? "");
+  }, [activeFile?.fileId]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--accent", uiAccent);
+    root.style.setProperty("--accent-2", uiAccent2);
+    root.style.setProperty("--panel", uiPanelTone);
+  }, [uiAccent, uiAccent2, uiPanelTone]);
 
   function patchFileDocument(fileId: string, document: DocumentAst) {
     setFiles((current) => current.map((file) => (file.fileId === fileId ? { ...file, document } : file)));
@@ -513,6 +534,25 @@ export function App() {
     setStatus(`Restored version ${versionId}`);
   }
 
+  async function renameActiveArtboard() {
+    if (!projectId || !activeFileId) return;
+    const name = artboardRename.trim();
+    if (!name) {
+      setStatus("Artboard name cannot be empty.");
+      return;
+    }
+    try {
+      const file = await apiRequest<ProjectFile>(`/projects/${projectId}/files/${activeFileId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name })
+      });
+      setFiles((current) => current.map((item) => (item.fileId === file.fileId ? file : item)));
+      setStatus(`Renamed artboard to ${file.name}`);
+    } catch (error) {
+      setStatus(`Rename failed: ${(error as Error).message}`);
+    }
+  }
+
   async function runPatchPreview() {
     try {
       await previewPatch(JSON.parse(patchText) as PatchOp[]);
@@ -638,6 +678,12 @@ export function App() {
 
   const canvasDocument = (previewDocument ?? activeDocument) as DocumentAst | null;
 
+  const tokenSelects: Record<string, string[]> = {
+    tone: ["primary", "secondary", "accent", "surface", "muted", "danger"],
+    radius: ["none", "sm", "md", "lg", "xl"],
+    size: ["sm", "md", "lg", "xl", "2xl"]
+  };
+
   if (!activeDocument) return <div className="loading">Loading project...</div>;
 
   return (
@@ -668,8 +714,9 @@ export function App() {
             <h2>Artboards</h2>
             <button type="button" className="mini-action" onClick={() => void addCanvasItem("phone")}>+ New</button>
           </div>
+          <input className="artboard-search" value={artboardSearch} onChange={(event) => setArtboardSearch(event.target.value)} placeholder="Search artboards..." />
           <div className="artboard-list">
-            {artboardSummaries.map((file) => (
+            {filteredArtboardSummaries.map((file) => (
               <button
                 key={file.fileId}
                 type="button"
@@ -685,6 +732,10 @@ export function App() {
                 <span className="artboard-meta">Nodes {file.nodeCount} | V{file.version}</span>
               </button>
             ))}
+          </div>
+          <div className="artboard-rename-row">
+            <input value={artboardRename} onChange={(event) => setArtboardRename(event.target.value)} placeholder="Rename selected artboard" />
+            <button type="button" className="mini-action" onClick={() => void renameActiveArtboard()}>Save</button>
           </div>
 
           <div className="panel-head">
@@ -763,7 +814,27 @@ export function App() {
                 {Object.entries(selectedNode.props).map(([key, value]) => (
                   <label key={key} className="prop-field">
                     <span className="prop-label">{key}</span>
-                    <input defaultValue={String(value)} onBlur={(event) => void updateProp(key, event.target.value)} />
+                    {typeof value === "boolean" ? (
+                      <input
+                        type="checkbox"
+                        checked={value}
+                        onChange={(event) => void updateProp(key, String(event.target.checked))}
+                      />
+                    ) : tokenSelects[key] ? (
+                      <select value={String(value)} onChange={(event) => void updateProp(key, event.target.value)}>
+                        {tokenSelects[key].map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={typeof value === "number" ? "number" : "text"}
+                        defaultValue={String(value)}
+                        onBlur={(event) => void updateProp(key, event.target.value)}
+                      />
+                    )}
                   </label>
                 ))}
                 <div className="inspector-actions">
@@ -794,6 +865,22 @@ export function App() {
               </div>
             </>
           ) : null}
+
+          <h3>Design Lab</h3>
+          <div className="design-lab">
+            <label className="prop-field">
+              <span className="prop-label">Accent</span>
+              <input type="color" value={uiAccent} onChange={(event) => setUiAccent(event.target.value)} />
+            </label>
+            <label className="prop-field">
+              <span className="prop-label">Accent 2</span>
+              <input type="color" value={uiAccent2} onChange={(event) => setUiAccent2(event.target.value)} />
+            </label>
+            <label className="prop-field">
+              <span className="prop-label">Panel Tone</span>
+              <input type="color" value={uiPanelTone} onChange={(event) => setUiPanelTone(event.target.value)} />
+            </label>
+          </div>
 
           <h3>Versions</h3>
           <div className="versions">

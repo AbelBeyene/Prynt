@@ -120,6 +120,10 @@ export interface CreateFileRequest {
   baseFileId?: string;
 }
 
+export interface RenameFileRequest {
+  name: string;
+}
+
 export class EditorApiService {
   private readonly projects = new Map<string, ProjectState>();
 
@@ -182,6 +186,21 @@ export class EditorApiService {
       fileId,
       name: next.name,
       document: cloneDocument(next.document)
+    };
+  }
+
+  renameFile(projectId: string, fileId: string, request: RenameFileRequest): FileSummary {
+    const project = this.requireProject(projectId);
+    const file = this.requireFile(project, fileId);
+    const nextName = request.name.trim();
+    if (!nextName) {
+      throw new Error("File name cannot be empty.");
+    }
+    file.name = nextName;
+    return {
+      fileId: file.fileId,
+      name: file.name,
+      document: cloneDocument(file.document)
     };
   }
 

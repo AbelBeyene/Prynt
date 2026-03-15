@@ -75,6 +75,15 @@ app.post("/projects/:projectId/files", (req, res) => {
   }
 });
 
+app.patch("/projects/:projectId/files/:fileId", (req, res) => {
+  try {
+    const file = api.renameFile(req.params.projectId, req.params.fileId, req.body);
+    res.json(file);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
 app.post("/projects/:projectId/patch", (req, res) => {
   try {
     const response = api.applyPatch(req.params.projectId, req.body);
