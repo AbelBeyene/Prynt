@@ -65,6 +65,21 @@ interface PromptSuggestion {
   category: "layout" | "content" | "style" | "navigation" | "input";
 }
 
+interface TemplateDefinition {
+  id: string;
+  name: string;
+  category: string;
+  style: string;
+  description: string;
+}
+
+interface ExportResult {
+  format: "json" | "dsl" | "react" | "schema";
+  fileId: string;
+  fileName: string;
+  content: string;
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -402,6 +417,11 @@ export function App() {
   const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
   const [isRefreshingPromptLibrary, setIsRefreshingPromptLibrary] = useState(false);
+  const [templates, setTemplates] = useState<TemplateDefinition[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("mobile-dashboard");
+  const [exportFormat, setExportFormat] = useState<ExportResult["format"]>("json");
+  const [exportText, setExportText] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
@@ -481,12 +501,15 @@ export function App() {
       { id: "new-note", label: "Add Sticky Note", icon: StickyNote, action: () => void addCanvasItem("note") },
       { id: "new-frame", label: "Add Frame", icon: Frame, action: () => void addCanvasItem("frame") },
       { id: "fit-canvas", label: "Fit Canvas", icon: ScanSearch, action: () => fitToViewport() },
+      { id: "duplicate-screen", label: "Duplicate Artboard", icon: MonitorSmartphone, action: () => void duplicateActiveArtboard() },
+      { id: "apply-template", label: "Apply Selected Template", icon: Sparkles, action: () => void applySelectedTemplate() },
+      { id: "export", label: "Export Active File", icon: Palette, action: () => void exportActiveFile() },
       { id: "theme-teal", label: "Theme: Teal", icon: Palette, action: () => applyThemePreset("teal") },
       { id: "theme-violet", label: "Theme: Violet", icon: Palette, action: () => applyThemePreset("violet") },
       { id: "theme-amber", label: "Theme: Amber", icon: Palette, action: () => applyThemePreset("amber") },
       { id: "theme-mono", label: "Theme: Mono", icon: Palette, action: () => applyThemePreset("mono") }
     ],
-    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset]
+    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset, duplicateActiveArtboard, applySelectedTemplate, exportActiveFile]
   );
 
   useEffect(() => {
@@ -567,6 +590,18 @@ export function App() {
     }
   }
 
+  async function refreshTemplates() {
+    try {
+      const response = await apiRequest<{ templates: TemplateDefinition[] }>("/templates");
+      setTemplates(response.templates);
+      if (response.templates.length > 0) {
+        setSelectedTemplateId((current) => (response.templates.some((item) => item.id === current) ? current : (response.templates[0]?.id ?? current)));
+      }
+    } catch {
+      setTemplates([]);
+    }
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === "Space") setSpacePressed(true);
@@ -638,6 +673,7 @@ export function App() {
         ]);
         await refreshVersions(created.projectId, firstFile.fileId);
         await refreshPromptLibrary(created.projectId, firstFile.fileId);
+        await refreshTemplates();
       }
 
       setStatus("Project ready");
@@ -873,6 +909,87 @@ export function App() {
       setStatus(`Renamed artboard to ${file.name}`);
     } catch (error) {
       setStatus(`Rename failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function duplicateActiveArtboard() {
+    if (!projectId || !activeFileId || !activeFile) return;
+    try {
+      const file = await apiRequest<ProjectFile>(`/projects/${projectId}/files/${activeFileId}/duplicate`, {
+        method: "POST",
+        body: JSON.stringify({ name: `${activeFile.name} Copy` })
+      });
+      const id = uid("phone");
+      setFiles((current) => [...current, file]);
+      setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1540, y: 420, width: phoneWidth, height: 760 }]);
+      setSelectedCanvasItemId(id);
+      setSelectedId(file.document.root.id);
+      await refreshVersions(projectId, file.fileId);
+      setStatus(`Duplicated artboard: ${file.name}`);
+    } catch (error) {
+      setStatus(`Duplicate failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function deleteActiveArtboard() {
+    if (!projectId || !activeFileId) return;
+    try {
+      const response = await apiRequest<{ deleted: boolean; fileId: string; nextActiveFileId: string | null }>(
+        `/projects/${projectId}/files/${activeFileId}`,
+        { method: "DELETE" }
+      );
+      if (!response.deleted) {
+        setStatus("Delete request was ignored.");
+        return;
+      }
+      setFiles((current) => current.filter((item) => item.fileId !== response.fileId));
+      setCanvasItems((current) => current.filter((item) => !(item.type === "phone" && item.fileId === response.fileId)));
+      const nextPhone = canvasItems.find((item) => item.type === "phone" && item.fileId === response.nextActiveFileId);
+      if (nextPhone) {
+        setSelectedCanvasItemId(nextPhone.id);
+      } else {
+        setSelectedCanvasItemId(canvasItems.find((item) => item.type === "phone" && item.fileId !== response.fileId)?.id ?? null);
+      }
+      setStatus("Artboard deleted.");
+    } catch (error) {
+      setStatus(`Delete failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function applySelectedTemplate() {
+    if (!projectId || !activeFileId || !selectedTemplateId) return;
+    try {
+      const file = await apiRequest<ProjectFile>(`/projects/${projectId}/templates/apply`, {
+        method: "POST",
+        body: JSON.stringify({ fileId: activeFileId, templateId: selectedTemplateId })
+      });
+      patchFileDocument(file.fileId, file.document);
+      setSelectedId(file.document.root.id);
+      setStatus(`Applied template: ${selectedTemplateId}`);
+      await refreshVersions(projectId, file.fileId);
+    } catch (error) {
+      setStatus(`Template apply failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function exportActiveFile() {
+    if (!projectId || !activeFileId) return;
+    setIsExporting(true);
+    try {
+      const result = await apiRequest<ExportResult>(
+        `/projects/${projectId}/export?fileId=${encodeURIComponent(activeFileId)}&format=${encodeURIComponent(exportFormat)}`
+      );
+      setExportText(result.content);
+      try {
+        await navigator.clipboard.writeText(result.content);
+        setStatus(`Exported ${result.format.toUpperCase()} and copied to clipboard.`);
+      } catch {
+        setStatus(`Exported ${result.format.toUpperCase()}.`);
+      }
+    } catch (error) {
+      setStatus(`Export failed: ${(error as Error).message}`);
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -1135,9 +1252,26 @@ export function App() {
           <button type="button" onClick={() => void handleUndo()}>Undo</button>
           <button type="button" onClick={() => void handleRedo()}>Redo</button>
           <button type="button" onClick={() => void handleRepair()}>Repair</button>
+          <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+            {templates.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => void applySelectedTemplate()}>Apply Template</button>
         </div>
         <div className="workspace-tools-right">
           <button type="button" onClick={() => setIsCommandOpen(true)}>Command</button>
+          <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportResult["format"])}>
+            <option value="json">Export JSON</option>
+            <option value="dsl">Export DSL</option>
+            <option value="react">Export React</option>
+            <option value="schema">Export Schema</option>
+          </select>
+          <button type="button" onClick={() => void exportActiveFile()} disabled={isExporting}>
+            {isExporting ? "Exporting..." : "Export"}
+          </button>
           <span className="active-target">Target: {activeFile?.name ?? "n/a"}</span>
           <select value={device} onChange={(event) => setDevice(event.target.value as DevicePreset)}>
             <option value="iphone">iPhone (390)</option>
@@ -1175,6 +1309,10 @@ export function App() {
           <div className="artboard-rename-row">
             <input value={artboardRename} onChange={(event) => setArtboardRename(event.target.value)} placeholder="Rename selected artboard" />
             <button type="button" className="mini-action" onClick={() => void renameActiveArtboard()}>Save</button>
+          </div>
+          <div className="artboard-actions-row">
+            <button type="button" className="mini-action" onClick={() => void duplicateActiveArtboard()}>Duplicate</button>
+            <button type="button" className="mini-action danger-outline" onClick={() => void deleteActiveArtboard()}>Delete</button>
           </div>
 
           <div className="panel-head">
@@ -1381,6 +1519,8 @@ export function App() {
               </button>
             ))}
           </div>
+          <h3>Export Output</h3>
+          <textarea className="source-box" readOnly value={exportText || "Use Export from the top toolbar."} />
         </aside>
       </main>
 

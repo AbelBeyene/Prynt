@@ -6,6 +6,7 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 
 - Prompt-native editing with deterministic patch operations.
 - Intent-aware prompt parsing with confidence and warnings.
+- Production API enhancements: request IDs, endpoint-level metrics, and structured error payloads.
 - Multi-modal editing paths:
   - Prompt bar
   - Layer tree selection
@@ -16,6 +17,9 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Prompt simulation preview across one or many screens.
 - Version history with restore.
 - Undo/redo.
+- Artboard lifecycle operations (create, rename, duplicate, delete).
+- Template library with apply-to-screen flow.
+- Multi-format exports (JSON, DSL, React-like component output, schema summary).
 - Mobile device previews: iPhone (390), Android (360), Tablet (768).
 
 ## Architecture
@@ -73,14 +77,19 @@ npm run build
 ## API endpoints (MVP)
 
 - `POST /projects`
+- `GET /projects`
 - `GET /projects/:projectId`
+- `GET /templates`
 - `POST /projects/:projectId/prompt`
 - `POST /projects/:projectId/intent`
 - `POST /projects/:projectId/prompt/simulate`
 - `GET /projects/:projectId/prompt/history`
 - `GET /projects/:projectId/prompt/suggestions`
+- `POST /projects/:projectId/templates/apply`
 - `POST /projects/:projectId/patch`
 - `POST /projects/:projectId/patch/preview`
+- `POST /projects/:projectId/files/:fileId/duplicate`
+- `DELETE /projects/:projectId/files/:fileId`
 - `POST /projects/:projectId/undo`
 - `POST /projects/:projectId/redo`
 - `POST /projects/:projectId/repair/suggest`
@@ -88,6 +97,8 @@ npm run build
 - `GET /projects/:projectId/versions`
 - `POST /projects/:projectId/versions/:versionId/restore`
 - `GET /projects/:projectId/dsl`
+- `GET /projects/:projectId/export?format=json|dsl|react|schema`
+- `GET /metrics`
 
 ## Notes
 

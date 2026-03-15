@@ -31,9 +31,19 @@ export interface FileSummary {
 }
 
 export interface ProjectState {
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
   files: Map<string, FileState>;
   fileOrder: string[];
   promptHistory: PromptHistoryEntry[];
+}
+
+export interface ProjectSummary {
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
+  fileCount: number;
 }
 
 export interface IntentSpec {
@@ -58,6 +68,21 @@ export interface PromptSuggestion {
   id: string;
   text: string;
   category: "layout" | "content" | "style" | "navigation" | "input";
+}
+
+export interface TemplateDefinition {
+  id: string;
+  name: string;
+  category: "mobile-app" | "dashboard" | "landing-page" | "admin" | "marketing" | "auth" | "onboarding" | "forms";
+  style: "modern-saas" | "minimal" | "enterprise" | "glassmorphism" | "dark" | "light" | "mobile-native";
+  description: string;
+}
+
+export interface ExportResult {
+  format: "json" | "dsl" | "react" | "schema";
+  fileId: string;
+  fileName: string;
+  content: string;
 }
 
 export interface ApplyPatchRequest {
@@ -140,6 +165,15 @@ export interface RenameFileRequest {
   name: string;
 }
 
+export interface DuplicateFileRequest {
+  name?: string;
+}
+
+export interface ApplyTemplateRequest {
+  fileId?: string;
+  templateId: string;
+}
+
 export class EditorApiService {
   private readonly projects = new Map<string, ProjectState>();
 
@@ -151,7 +185,11 @@ export class EditorApiService {
       version: 1
     });
 
+    const now = new Date().toISOString();
     const project: ProjectState = {
+      projectId,
+      createdAt: now,
+      updatedAt: now,
       files: new Map([[fileId, file]]),
       fileOrder: [fileId],
       promptHistory: []
@@ -163,6 +201,15 @@ export class EditorApiService {
 
   getProject(projectId: string): ProjectState {
     return this.requireProject(projectId);
+  }
+
+  listProjects(): ProjectSummary[] {
+    return [...this.projects.values()].map((project) => ({
+      projectId: project.projectId,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      fileCount: project.fileOrder.length
+    }));
   }
 
   listFiles(projectId: string): FileSummary[] {
@@ -198,6 +245,7 @@ export class EditorApiService {
     const next = createFileState(fileId, request.name ?? `Screen ${project.fileOrder.length + 1}`, cloned);
     project.files.set(fileId, next);
     project.fileOrder.push(fileId);
+    project.updatedAt = new Date().toISOString();
 
     return {
       fileId,
@@ -214,10 +262,112 @@ export class EditorApiService {
       throw new Error("File name cannot be empty.");
     }
     file.name = nextName;
+    project.updatedAt = new Date().toISOString();
     return {
       fileId: file.fileId,
       name: file.name,
       document: cloneDocument(file.document)
+    };
+  }
+
+  duplicateFile(projectId: string, fileId: string, request: DuplicateFileRequest): FileSummary {
+    const project = this.requireProject(projectId);
+    const source = this.requireFile(project, fileId);
+    const nextIdValue = `file-${project.fileOrder.length + 1}`;
+    const cloned = cloneDocument(source.document);
+    cloned.docId = nextIdValue;
+    cloned.version = 1;
+    cloned.root = reIdTree(cloned.root, nextIdValue);
+    const name = request.name?.trim() || `${source.name} Copy`;
+    const next = createFileState(nextIdValue, name, cloned);
+    project.files.set(nextIdValue, next);
+    project.fileOrder.push(nextIdValue);
+    project.updatedAt = new Date().toISOString();
+    return { fileId: next.fileId, name: next.name, document: cloneDocument(next.document) };
+  }
+
+  deleteFile(projectId: string, fileId: string): { deleted: boolean; fileId: string; nextActiveFileId: string | null } {
+    const project = this.requireProject(projectId);
+    if (!project.files.has(fileId)) {
+      throw new Error(`File not found: ${fileId}`);
+    }
+    if (project.fileOrder.length <= 1) {
+      throw new Error("At least one file is required in a project.");
+    }
+    project.files.delete(fileId);
+    project.fileOrder = project.fileOrder.filter((id) => id !== fileId);
+    project.updatedAt = new Date().toISOString();
+    return {
+      deleted: true,
+      fileId,
+      nextActiveFileId: project.fileOrder[0] ?? null
+    };
+  }
+
+  listTemplates(): TemplateDefinition[] {
+    return [
+      { id: "mobile-dashboard", name: "Mobile Dashboard", category: "mobile-app", style: "mobile-native", description: "Metrics overview with cards and activity list." },
+      { id: "auth-login", name: "Authentication Login", category: "auth", style: "minimal", description: "Sign-in screen with form and social actions." },
+      { id: "profile-settings", name: "Profile + Settings", category: "mobile-app", style: "modern-saas", description: "Profile header with settings and preferences." },
+      { id: "saas-landing", name: "SaaS Landing", category: "landing-page", style: "modern-saas", description: "Hero, benefits, testimonials, and CTA." },
+      { id: "admin-panel", name: "Admin Panel", category: "admin", style: "enterprise", description: "Data-driven admin layout with stats and table." },
+      { id: "onboarding-flow", name: "Onboarding Flow", category: "onboarding", style: "mobile-native", description: "Welcome, value props, and account setup steps." },
+      { id: "ecommerce-home", name: "E-commerce Home", category: "marketing", style: "modern-saas", description: "Product categories, featured items, and promotions." },
+      { id: "form-heavy", name: "Form-Heavy Workspace", category: "forms", style: "light", description: "Long-form workflow with grouped input sections." }
+    ];
+  }
+
+  applyTemplate(projectId: string, request: ApplyTemplateRequest): FileSummary {
+    const { project, file } = this.resolveFile(projectId, request.fileId);
+    const template = buildTemplateDocument(request.templateId, file.fileId);
+    const validation = validateDocument(template);
+    if (!validation.valid) {
+      throw new Error(`Template '${request.templateId}' is invalid: ${validation.issues.map((i) => i.message).join(" | ")}`);
+    }
+
+    file.undoStack.push(cloneDocument(file.document));
+    file.redoStack = [];
+    file.document = template;
+    file.versions.push({
+      id: file.versions.length + 1,
+      reason: `Template: ${request.templateId}`,
+      createdAt: new Date().toISOString(),
+      document: cloneDocument(file.document)
+    });
+    project.updatedAt = new Date().toISOString();
+    return { fileId: file.fileId, name: file.name, document: cloneDocument(file.document) };
+  }
+
+  exportFile(projectId: string, fileId: string | undefined, format: ExportResult["format"]): ExportResult {
+    const { file } = this.resolveFile(projectId, fileId);
+    if (format === "dsl") {
+      return { format, fileId: file.fileId, fileName: file.name, content: serializeDocumentToDsl(file.document) };
+    }
+    if (format === "react") {
+      return { format, fileId: file.fileId, fileName: file.name, content: renderReactExport(file.document) };
+    }
+    if (format === "schema") {
+      return {
+        format,
+        fileId: file.fileId,
+        fileName: file.name,
+        content: JSON.stringify(
+          {
+            schemaVersion: file.document.schemaVersion,
+            docId: file.document.docId,
+            version: file.document.version,
+            rootType: file.document.root.type
+          },
+          null,
+          2
+        )
+      };
+    }
+    return {
+      format: "json",
+      fileId: file.fileId,
+      fileName: file.name,
+      content: JSON.stringify(file.document, null, 2)
     };
   }
 
@@ -410,6 +560,7 @@ export class EditorApiService {
     if (project.promptHistory.length > 200) {
       project.promptHistory = project.promptHistory.slice(-200);
     }
+    project.updatedAt = new Date().toISOString();
 
     return {
       prompt: request.prompt,
@@ -638,6 +789,10 @@ export class EditorApiService {
           createdAt: new Date().toISOString(),
           document: cloneDocument(file.document)
         });
+        const project = [...this.projects.values()].find((entry) => entry.files.has(file.fileId));
+        if (project) {
+          project.updatedAt = new Date().toISOString();
+        }
       }
 
       return {
@@ -673,6 +828,10 @@ export class EditorApiService {
               createdAt: new Date().toISOString(),
               document: cloneDocument(file.document)
             });
+            const project = [...this.projects.values()].find((entry) => entry.files.has(file.fileId));
+            if (project) {
+              project.updatedAt = new Date().toISOString();
+            }
           }
 
           return {
@@ -1166,5 +1325,181 @@ export function buildStubInitialDocument(projectId: string): DocumentAst {
         }
       ]
     }
+  };
+}
+
+function renderReactExport(document: DocumentAst): string {
+  function renderNode(node: AstNode, depth: number): string {
+    const indent = "  ".repeat(depth);
+    const propEntries = Object.entries(node.props).filter(([, value]) => value !== undefined);
+    const props = propEntries.length
+      ? " " + propEntries.map(([key, value]) => `${key}={${JSON.stringify(value)}}`).join(" ")
+      : "";
+    if (node.children.length === 0) {
+      return `${indent}<${node.type}${props} />`;
+    }
+    const children = node.children.map((child) => renderNode(child, depth + 1)).join("\n");
+    return `${indent}<${node.type}${props}>\n${children}\n${indent}</${node.type}>`;
+  }
+
+  return [
+    "import React from \"react\";",
+    "",
+    "export function GeneratedScreen() {",
+    "  return (",
+    renderNode(document.root, 2),
+    "  );",
+    "}",
+    ""
+  ].join("\n");
+}
+
+function createTemplateRoot(title: string, bodyChildren: AstNode[], includeTabs = true): AstNode {
+  return createNode("Screen", "screen-root", { title }, [
+    createNode("SafeArea", "safearea-1", {}, [
+      createNode("TopBar", "topbar-1", { title }),
+      createNode("ScrollView", "scroll-1", { padding: "md" }, [
+        createNode("Stack", "stack-1", { gap: "md", padding: "md" }, bodyChildren)
+      ]),
+      ...(includeTabs ? [createNode("BottomTabBar", "tabbar-1", { tabs: 4 })] : [])
+    ])
+  ]);
+}
+
+function buildTemplateDocument(templateId: string, fileId: string): DocumentAst {
+  const nowVersion = 1;
+  if (templateId === "auth-login") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Sign In", [
+        createNode("Heading", "heading-1", { text: "Welcome back", size: "2xl" }),
+        createNode("Text", "text-1", { text: "Sign in to continue." }),
+        createNode("Form", "form-1", { title: "Login" }, [
+          createNode("TextField", "email-1", { label: "Email", placeholder: "you@company.com", minHeight: 44 }),
+          createNode("TextField", "password-1", { label: "Password", placeholder: "••••••••", minHeight: 44 }),
+          createNode("Button", "signin-1", { text: "Sign In", tone: "primary", size: "md", minHeight: 44 })
+        ])
+      ], false)
+    };
+  }
+
+  if (templateId === "profile-settings") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Profile", [
+        createNode("Card", "card-1", { tone: "surface", radius: "xl" }, [
+          createNode("Avatar", "avatar-1", { initials: "AB", size: "lg" }),
+          createNode("Heading", "heading-1", { text: "Alex Brown", size: "xl" }),
+          createNode("Badge", "badge-1", { text: "Pro", tone: "primary" })
+        ]),
+        createNode("List", "list-1", {}, [
+          createNode("ListItem", "li-1", { title: "Notifications", subtitle: "Push and email alerts" }),
+          createNode("ListItem", "li-2", { title: "Privacy", subtitle: "Security controls" }),
+          createNode("ListItem", "li-3", { title: "Subscription", subtitle: "Manage billing" })
+        ])
+      ])
+    };
+  }
+
+  if (templateId === "saas-landing") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Launch Faster", [
+        createNode("Card", "hero-1", { tone: "primary", radius: "xl" }, [
+          createNode("Heading", "heading-1", { text: "Build your product in days", size: "3xl" }),
+          createNode("Text", "text-1", { text: "A modern platform for teams shipping fast." }),
+          createNode("Button", "cta-1", { text: "Start Free Trial", tone: "accent", size: "lg", minHeight: 48 })
+        ]),
+        createNode("Grid", "grid-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "card-1", { tone: "surface", radius: "lg" }, [createNode("Text", "text-2", { text: "No-code workflows" })]),
+          createNode("Card", "card-2", { tone: "surface", radius: "lg" }, [createNode("Text", "text-3", { text: "AI-assisted layout generation" })])
+        ]),
+        createNode("PricingTable", "pricing-1", { tier: "Pro", tone: "primary" })
+      ], false)
+    };
+  }
+
+  if (templateId === "admin-panel") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Admin Panel", [
+        createNode("Grid", "stats-grid-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "stat-1", { tone: "surface", radius: "lg" }, [createNode("Heading", "h1", { text: "Users", size: "lg" }), createNode("Text", "t1", { text: "12,941" })]),
+          createNode("Card", "stat-2", { tone: "surface", radius: "lg" }, [createNode("Heading", "h2", { text: "Revenue", size: "lg" }), createNode("Text", "t2", { text: "$82,300" })])
+        ]),
+        createNode("Table", "table-1", { rows: 6, columns: 4 })
+      ])
+    };
+  }
+
+  if (templateId === "onboarding-flow") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Get Started", [
+        createNode("Card", "card-1", { tone: "surface", radius: "xl" }, [
+          createNode("Heading", "heading-1", { text: "Welcome to Prynt", size: "2xl" }),
+          createNode("Text", "text-1", { text: "Create your first project in under a minute." }),
+          createNode("Button", "btn-1", { text: "Continue", tone: "primary", size: "md", minHeight: 44 })
+        ]),
+        createNode("List", "list-1", {}, [
+          createNode("ListItem", "li-1", { title: "Create workspace", subtitle: "Set team and brand defaults" }),
+          createNode("ListItem", "li-2", { title: "Pick templates", subtitle: "Start from best-practice screens" }),
+          createNode("ListItem", "li-3", { title: "Generate with AI", subtitle: "Prompt and iterate" })
+        ])
+      ])
+    };
+  }
+
+  if (templateId === "ecommerce-home") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Shop", [
+        createNode("SearchBar", "search-1", { placeholder: "Search products", minHeight: 44 }),
+        createNode("Grid", "grid-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "cat-1", { tone: "surface", radius: "lg" }, [createNode("Heading", "h1", { text: "Apparel", size: "lg" })]),
+          createNode("Card", "cat-2", { tone: "surface", radius: "lg" }, [createNode("Heading", "h2", { text: "Accessories", size: "lg" })])
+        ]),
+        createNode("List", "list-1", {}, [
+          createNode("ListItem", "p1", { title: "Classic Tee", subtitle: "$29" }),
+          createNode("ListItem", "p2", { title: "Urban Cap", subtitle: "$19" })
+        ])
+      ])
+    };
+  }
+
+  if (templateId === "form-heavy") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Workspace Setup", [
+        createNode("Form", "form-1", { title: "Project Setup" }, [
+          createNode("TextField", "name-1", { label: "Project Name", placeholder: "Acme Revamp", minHeight: 44 }),
+          createNode("Select", "sel-1", { label: "Industry", options: "SaaS|E-commerce|Healthcare" }),
+          createNode("RadioGroup", "rg-1", { label: "Target Platform", options: "Mobile|Web|Both" }),
+          createNode("TextArea", "ta-1", { placeholder: "Describe your objectives", rows: 5 }),
+          createNode("Button", "btn-1", { text: "Save and Continue", tone: "primary", size: "lg", minHeight: 48 })
+        ])
+      ], false)
+    };
+  }
+
+  return {
+    schemaVersion: "1.0.0",
+    docId: fileId,
+    version: nowVersion,
+    root: createTemplateRoot("Dashboard", buildDashboardStack().children)
   };
 }

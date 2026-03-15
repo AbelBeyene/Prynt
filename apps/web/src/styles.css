@@ -210,6 +210,11 @@ body {
   cursor: pointer;
 }
 
+.danger-outline {
+  border-color: #7f1d1d;
+  color: #fecdd3;
+}
+
 .layer-panel {
   border-right: 1px solid var(--border);
 }
@@ -254,6 +259,13 @@ body {
 .artboard-rename-row {
   display: grid;
   grid-template-columns: 1fr auto;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.artboard-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-bottom: 10px;
 }
