@@ -33,6 +33,9 @@ const metrics = {
   promptRequests: 0,
   promptRejected: 0
 };
+const promptRate = new Map<string, { windowStart: number; count: number }>();
+const PROMPT_WINDOW_MS = 60_000;
+const PROMPT_MAX_PER_WINDOW = 60;
 
 class ApiError extends Error {
   constructor(message: string, readonly statusCode = 400) {
@@ -76,6 +79,19 @@ function sanitizePrompt(raw: unknown): string {
     throw new ApiError("Prompt contains unsafe content.", 400);
   }
   return prompt;
+}
+
+function enforcePromptRateLimit(ip: string): void {
+  const now = Date.now();
+  const bucket = promptRate.get(ip);
+  if (!bucket || now - bucket.windowStart > PROMPT_WINDOW_MS) {
+    promptRate.set(ip, { windowStart: now, count: 1 });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > PROMPT_MAX_PER_WINDOW) {
+    throw new ApiError("Rate limit exceeded for prompt operations. Try again in one minute.", 429);
+  }
 }
 
 app.use(cors());
@@ -170,6 +186,7 @@ app.post("/projects/:projectId/patch/preview", route((req, res) => {
 }));
 
 app.post("/projects/:projectId/prompt", route(async (req, res) => {
+  enforcePromptRateLimit(req.ip || "unknown");
   metrics.promptRequests += 1;
   try {
     req.body.prompt = sanitizePrompt(req.body?.prompt);
@@ -182,6 +199,7 @@ app.post("/projects/:projectId/prompt", route(async (req, res) => {
 }));
 
 app.post("/projects/:projectId/prompt/simulate", route(async (req, res) => {
+  enforcePromptRateLimit(req.ip || "unknown");
   metrics.promptRequests += 1;
   try {
     req.body.prompt = sanitizePrompt(req.body?.prompt);
