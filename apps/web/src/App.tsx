@@ -114,6 +114,19 @@ function findNode(root: AstNode, id: string): AstNode | null {
   return null;
 }
 
+function findParentId(root: AstNode, targetId: string): string | null {
+  const stack: Array<{ node: AstNode; parentId: string | null }> = [{ node: root, parentId: null }];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    if (current.node.id === targetId) return current.parentId;
+    for (const child of current.node.children) {
+      stack.push({ node: child, parentId: current.node.id });
+    }
+  }
+  return null;
+}
+
 function spacingToPx(value: unknown): number | undefined {
   if (typeof value !== "string") return undefined;
   const map: Record<string, number> = { xs: 6, sm: 10, md: 14, lg: 20, xl: 28 };
@@ -386,6 +399,15 @@ function buildNodePreset(type: string): AstNode {
   return { id, type: "Text", props: { text: `Unsupported preset for ${type}` }, children: [] };
 }
 
+function cloneNodeWithNewIds(node: AstNode): AstNode {
+  return {
+    ...node,
+    id: uid(node.type.toLowerCase()),
+    props: { ...node.props },
+    children: node.children.map((child) => cloneNodeWithNewIds(child))
+  };
+}
+
 function buildThemeFromAccent(accent: string) {
   const base = chroma(accent);
   const accent2 = base.set("hsl.h", (base.get("hsl.h") + 38) % 360).saturate(0.4).hex();
@@ -413,6 +435,7 @@ export function App() {
   const [status, setStatus] = useState("Ready");
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
   const [promptWarnings, setPromptWarnings] = useState<string[]>([]);
+  const [lastPromptSummary, setLastPromptSummary] = useState("");
   const [promptLibraryQuery, setPromptLibraryQuery] = useState("");
   const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
@@ -751,7 +774,7 @@ export function App() {
         source: "llm" | "rule" | "mixed";
         fileName: string;
         response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] };
-        results: Array<{ fileId: string; fileName: string; response: { document: DocumentAst; applied: boolean } }>;
+        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { document: DocumentAst; applied: boolean } }>;
       }>(`/projects/${projectId}/prompt`, {
         method: "POST",
         body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
@@ -769,6 +792,11 @@ export function App() {
       setPreviewDocument(null);
       setPromptConfidence(response.intent.confidence);
       setPromptWarnings(response.intent.warnings);
+      setLastPromptSummary(
+        response.results
+          .map((item) => `${item.fileName}: ${item.response.applied ? "applied" : "failed"} via ${item.source}`)
+          .join(" | ")
+      );
       setStatus(
         response.response.applied
           ? `Prompt applied on ${response.results.length} screen(s) (${response.source})`
@@ -873,6 +901,23 @@ export function App() {
     if (!selectedId || !activeDocument || selectedId === activeDocument.root.id) return;
     await applyPatch([{ opId: uid("remove"), type: "removeNode", targetId: selectedId }], "Remove node");
     setSelectedId(activeDocument.root.id);
+  }
+
+  async function duplicateSelected() {
+    if (!selectedId || !activeDocument) return;
+    if (selectedId === activeDocument.root.id) {
+      setStatus("Duplicate root is not supported.");
+      return;
+    }
+    const source = findNode(activeDocument.root, selectedId);
+    const parentId = findParentId(activeDocument.root, selectedId);
+    if (!source || !parentId) {
+      setStatus("Unable to locate selected component.");
+      return;
+    }
+    const clone = cloneNodeWithNewIds(source);
+    await applyPatch([{ opId: uid("duplicate"), type: "addNode", parentId, node: clone }], `Duplicate ${source.type}`);
+    setSelectedId(clone.id);
   }
 
   async function updateProp(key: string, value: string) {
@@ -1467,6 +1512,7 @@ export function App() {
                   </select>
                   <button type="button" className="btn-soft" onClick={() => void addNode(insertComponentType)}>Add Selected</button>
                   <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Quick Card</button>
+                  <button type="button" className="btn-soft" onClick={() => void duplicateSelected()}>Duplicate</button>
                   <button type="button" className="btn-danger" onClick={() => void removeSelected()}>Remove</button>
                 </div>
               </>
@@ -1577,7 +1623,9 @@ export function App() {
           ))}
         </div>
         <div className="prompt-dock-foot">
-          {promptWarnings.length > 0 ? promptWarnings.join(" | ") : "Tip: reference screens by name, screen number, or 'all screens'."}
+          {promptWarnings.length > 0
+            ? promptWarnings.join(" | ")
+            : lastPromptSummary || "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
       </section>
 
