@@ -104,11 +104,112 @@ body {
 .canvas-panel {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.canvas-toolbar {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.canvas-toolbar h2 {
+  margin: 0;
+}
+
+.canvas-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-controls button {
+  border: 1px solid var(--border);
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.canvas-viewport {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-image:
+    linear-gradient(to right, rgba(15, 118, 110, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 118, 110, 0.09) 1px, transparent 1px);
+  background-size: 24px 24px;
+  overflow: auto;
+  height: 720px;
+  cursor: default;
+}
+
+.canvas-viewport.space-pan {
+  cursor: grab;
+}
+
+.canvas-stage {
+  position: relative;
+}
+
+.canvas-zoom-layer {
+  transform-origin: top left;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-item {
+  position: absolute;
+  border: 1px dashed #6b7280;
+  border-radius: 12px;
+}
+
+.canvas-item.active {
+  border-color: #0ea5e9;
+}
+
+.canvas-item-handle {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 6px;
+  cursor: move;
+}
+
+.canvas-item.note {
+  background: #fef3c7;
+}
+
+.canvas-item.frame {
+  background: rgba(219, 234, 254, 0.55);
+}
+
+.frame-content {
+  padding: 12px;
+  color: #334155;
+  font-size: 13px;
+}
+
+.note-content {
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  font: 13px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.canvas-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .device-frame {
   min-height: 640px;
+  width: 100%;
   border: 10px solid #111827;
   border-radius: 26px;
   background: #fff;
@@ -256,5 +357,10 @@ body {
 
   .prompt-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .canvas-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

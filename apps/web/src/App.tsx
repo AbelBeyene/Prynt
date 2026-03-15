@@ -1,17 +1,42 @@
-import { useEffect, useMemo, useState, type MouseEventHandler } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MouseEventHandler, type WheelEvent as ReactWheelEvent } from "react";
 import type { AstNode, DocumentAst } from "@prynt/ast";
 import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
 
 const API_URL = "http://localhost:4000";
+const STAGE_WIDTH = 5000;
+const STAGE_HEIGHT = 3200;
 
 type DevicePreset = "iphone" | "android" | "tablet";
 type InspectorMode = "props" | "source" | "patch";
+
+type CanvasItemType = "phone" | "note" | "frame";
+
+interface CanvasItem {
+  id: string;
+  type: CanvasItemType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text?: string;
+}
 
 interface VersionSnapshot {
   id: number;
   reason: string;
   createdAt: string;
+}
+
+interface DragState {
+  mode: "pan" | "item";
+  startX: number;
+  startY: number;
+  startScrollLeft?: number;
+  startScrollTop?: number;
+  itemId?: string;
+  itemX?: number;
+  itemY?: number;
 }
 
 function parseValue(value: string): unknown {
@@ -150,6 +175,10 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function clampZoom(value: number): number {
+  return Math.min(2.5, Math.max(0.3, value));
+}
+
 export function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [document, setDocument] = useState<DocumentAst | null>(null);
@@ -161,8 +190,15 @@ export function App() {
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
   const [previewDocument, setPreviewDocument] = useState<DocumentAst | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>("phone-main");
+  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
 
-  const width = useMemo(() => {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+
+  const phoneWidth = useMemo(() => {
     if (device === "android") {
       return 360;
     }
@@ -185,6 +221,81 @@ export function App() {
   }
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        setSpacePressed(true);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        setSpacePressed(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onMouseMove = (event: MouseEvent) => {
+      const dragging = dragRef.current;
+      if (!dragging) {
+        return;
+      }
+
+      if (dragging.mode === "pan") {
+        const viewport = viewportRef.current;
+        if (!viewport || dragging.startScrollLeft === undefined || dragging.startScrollTop === undefined) {
+          return;
+        }
+        viewport.scrollLeft = dragging.startScrollLeft - (event.clientX - dragging.startX);
+        viewport.scrollTop = dragging.startScrollTop - (event.clientY - dragging.startY);
+      }
+
+      if (dragging.mode === "item") {
+        if (!dragging.itemId || dragging.itemX === undefined || dragging.itemY === undefined) {
+          return;
+        }
+        const dx = (event.clientX - dragging.startX) / zoom;
+        const dy = (event.clientY - dragging.startY) / zoom;
+
+        setCanvasItems((current) =>
+          current.map((item) =>
+            item.id === dragging.itemId
+              ? {
+                  ...item,
+                  x: Math.max(0, item.x + dx),
+                  y: Math.max(0, item.y + dy)
+                }
+              : item
+          )
+        );
+
+        dragRef.current = {
+          ...dragging,
+          startX: event.clientX,
+          startY: event.clientY
+        };
+      }
+    };
+
+    const onMouseUp = () => {
+      dragRef.current = null;
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [zoom]);
+
+  useEffect(() => {
     void (async () => {
       const created = await apiRequest<{ projectId: string; document: DocumentAst; versions: VersionSnapshot[] }>("/projects", {
         method: "POST",
@@ -194,9 +305,29 @@ export function App() {
       setDocument(created.document);
       setSelectedId(created.document.root.id);
       setVersions(created.versions);
+      setCanvasItems([
+        {
+          id: "phone-main",
+          type: "phone",
+          x: 760,
+          y: 380,
+          width: phoneWidth,
+          height: 760
+        }
+      ]);
       setStatus("Project ready");
+
+      const viewport = viewportRef.current;
+      if (viewport) {
+        viewport.scrollLeft = 520;
+        viewport.scrollTop = 260;
+      }
     })();
   }, []);
+
+  useEffect(() => {
+    setCanvasItems((current) => current.map((item) => (item.type === "phone" ? { ...item, width: phoneWidth } : item)));
+  }, [phoneWidth]);
 
   async function applyPatch(patches: PatchOp[], reason: string) {
     if (!projectId) {
@@ -372,6 +503,68 @@ export function App() {
     }
   }
 
+  function addCanvasItem(type: CanvasItemType) {
+    const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
+    const defaults: Record<CanvasItemType, CanvasItem> = {
+      phone: { id, type: "phone", x: 1400, y: 420, width: phoneWidth, height: 760 },
+      note: { id, type: "note", x: 360, y: 340, width: 260, height: 180, text: "Sticky note\nWrite ideas here" },
+      frame: { id, type: "frame", x: 320, y: 640, width: 520, height: 320, text: "Wireframe Area" }
+    };
+    setCanvasItems((current) => [...current, defaults[type]]);
+    setSelectedCanvasItemId(id);
+  }
+
+  function handleCanvasBackgroundMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!(spacePressed || event.button === 1)) {
+      return;
+    }
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    dragRef.current = {
+      mode: "pan",
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop
+    };
+    event.preventDefault();
+  }
+
+  function handleItemMouseDown(event: ReactMouseEvent<HTMLDivElement>, item: CanvasItem) {
+    if (event.button !== 0) {
+      return;
+    }
+    dragRef.current = {
+      mode: "item",
+      startX: event.clientX,
+      startY: event.clientY,
+      itemId: item.id,
+      itemX: item.x,
+      itemY: item.y
+    };
+    setSelectedCanvasItemId(item.id);
+    event.stopPropagation();
+  }
+
+  function handleCanvasWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+    event.preventDefault();
+    const next = clampZoom(zoom + (event.deltaY < 0 ? 0.08 : -0.08));
+    setZoom(next);
+  }
+
+  function zoomIn() {
+    setZoom((current) => clampZoom(current + 0.1));
+  }
+
+  function zoomOut() {
+    setZoom((current) => clampZoom(current - 0.1));
+  }
+
   const canvasDocument = (previewDocument ?? document) as DocumentAst;
 
   if (!document) {
@@ -413,10 +606,43 @@ export function App() {
         </aside>
 
         <section className="panel canvas-panel">
-          <h2>{previewDocument ? "Canvas (Preview)" : "Canvas"}</h2>
-          <div className="device-frame" style={{ width }}>
-            {renderNode(canvasDocument.root, selectedId, setSelectedId)}
+          <div className="canvas-toolbar">
+            <h2>{previewDocument ? "Canvas (Preview)" : "Canvas"}</h2>
+            <div className="canvas-controls">
+              <button type="button" onClick={zoomOut}>-</button>
+              <span>{Math.round(zoom * 100)}%</span>
+              <button type="button" onClick={zoomIn}>+</button>
+              <button type="button" onClick={() => addCanvasItem("note")}>Add Note</button>
+              <button type="button" onClick={() => addCanvasItem("frame")}>Add Frame</button>
+              <button type="button" onClick={() => addCanvasItem("phone")}>Add Screen</button>
+            </div>
           </div>
+
+          <div
+            ref={viewportRef}
+            className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`}
+            onMouseDown={handleCanvasBackgroundMouseDown}
+            onWheel={handleCanvasWheel}
+          >
+            <div className="canvas-stage" style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}>
+              <div className="canvas-zoom-layer" style={{ transform: `scale(${zoom})` }}>
+                {canvasItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`canvas-item ${item.type} ${selectedCanvasItemId === item.id ? "active" : ""}`}
+                    style={{ left: item.x, top: item.y, width: item.width, minHeight: item.height }}
+                    onMouseDown={(event) => handleItemMouseDown(event, item)}
+                  >
+                    <div className="canvas-item-handle">{item.type.toUpperCase()}</div>
+                    {item.type === "phone" ? <div className="device-frame">{renderNode(canvasDocument.root, selectedId, setSelectedId)}</div> : null}
+                    {item.type === "note" ? <pre className="note-content">{item.text}</pre> : null}
+                    {item.type === "frame" ? <div className="frame-content">{item.text}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="canvas-hint">Hold Space and drag to pan. Use +/- or Ctrl/Cmd + wheel to zoom.</p>
         </section>
 
         <aside className="panel inspector-panel">
