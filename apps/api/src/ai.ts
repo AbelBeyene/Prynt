@@ -1,12 +1,25 @@
-import type { DocumentAst } from "@prynt/ast";
+import type { AstNode, DocumentAst } from "@prynt/ast";
 import type { PatchOp } from "@prynt/patches";
 
 const allowedOps = new Set(["addNode", "removeNode", "moveNode", "updateProps", "replaceNode", "wrapNode"]);
-
-export interface PromptAiResult {
-  patches: PatchOp[];
-  source: "llm" | "rule";
-}
+const opAliases: Record<string, PatchOp["type"]> = {
+  add: "addNode",
+  addnode: "addNode",
+  insert: "addNode",
+  remove: "removeNode",
+  removenode: "removeNode",
+  delete: "removeNode",
+  movenode: "moveNode",
+  move: "moveNode",
+  update: "updateProps",
+  updateprops: "updateProps",
+  setprops: "updateProps",
+  setvariant: "updateProps",
+  replace: "replaceNode",
+  replacenode: "replaceNode",
+  wrap: "wrapNode",
+  wrapnode: "wrapNode"
+};
 
 function extractJsonPayload(text: string): string {
   const fenced = text.match(/```json\s*([\s\S]*?)```/i);
@@ -20,48 +33,240 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function sanitizePatches(value: unknown): PatchOp[] {
-  const candidate = Array.isArray(value)
-    ? value
-    : isObject(value) && Array.isArray(value.patches)
-      ? value.patches
-      : [];
+function uid(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
+function coerceNode(input: unknown): AstNode | null {
+  if (!isObject(input)) {
+    return null;
+  }
+
+  const type = typeof input.type === "string" ? input.type : null;
+  if (!type) {
+    return null;
+  }
+
+  const id = typeof input.id === "string" && input.id.length > 0 ? input.id : uid(type.toLowerCase());
+  const props = isObject(input.props) ? input.props : {};
+  const rawChildren = Array.isArray(input.children) ? input.children : [];
+  const children: AstNode[] = rawChildren
+    .map((child) => coerceNode(child))
+    .filter((child): child is AstNode => child !== null);
+
+  return { id, type, props, children };
+}
+
+function parsePath(path: string): { targetId?: string; propKey?: string } {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) {
+    return {};
+  }
+
+  const propsIndex = parts.lastIndexOf("props");
+  if (propsIndex >= 0 && parts[propsIndex + 1]) {
+    const targetId = propsIndex > 0 ? parts[propsIndex - 1] : undefined;
+    const propKey = parts[propsIndex + 1];
+    const out: { targetId?: string; propKey?: string } = {};
+    if (propKey) {
+      out.propKey = propKey;
+    }
+    if (targetId) {
+      out.targetId = targetId;
+    }
+    return out;
+  }
+
+  const last = parts[parts.length - 1];
+  return last ? { targetId: last } : {};
+}
+
+function resolveOpType(raw: Record<string, unknown>): PatchOp["type"] | null {
+  const direct = typeof raw.type === "string" ? raw.type : typeof raw.op === "string" ? raw.op : null;
+  if (!direct) {
+    return null;
+  }
+
+  const normalized = direct.toLowerCase();
+  const mapped = opAliases[normalized] ?? (allowedOps.has(direct as PatchOp["type"]) ? (direct as PatchOp["type"]) : null);
+  if (!mapped || !allowedOps.has(mapped)) {
+    return null;
+  }
+  return mapped;
+}
+
+function normalizePatch(raw: Record<string, unknown>, selectedNodeId: string | undefined, rootId: string): PatchOp | null {
+  const type = resolveOpType(raw);
+  if (!type) {
+    return null;
+  }
+
+  const pathInfo = typeof raw.path === "string" ? parsePath(raw.path) : {};
+  const opId = typeof raw.opId === "string" && raw.opId.length > 0 ? raw.opId : uid(type.toLowerCase());
+
+  if (type === "addNode") {
+    const node = coerceNode(raw.node ?? raw.value);
+    if (!node) {
+      return null;
+    }
+    const parentId =
+      (typeof raw.parentId === "string" && raw.parentId) ||
+      (typeof raw.parent === "string" && raw.parent) ||
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      selectedNodeId ||
+      rootId;
+    const patch: PatchOp = {
+      opId,
+      type,
+      parentId,
+      node
+    };
+    if (typeof raw.index === "number") {
+      (patch as Extract<PatchOp, { type: "addNode" }>).index = raw.index;
+    }
+    return patch;
+  }
+
+  if (type === "removeNode") {
+    const targetId =
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      (typeof raw.target === "string" && raw.target) ||
+      pathInfo.targetId;
+    if (!targetId) {
+      return null;
+    }
+    return { opId, type, targetId };
+  }
+
+  if (type === "moveNode") {
+    const targetId =
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      (typeof raw.target === "string" && raw.target) ||
+      pathInfo.targetId;
+    const toParentId =
+      (typeof raw.toParentId === "string" && raw.toParentId) ||
+      (typeof raw.parentId === "string" && raw.parentId) ||
+      (typeof raw.to === "string" && raw.to) ||
+      selectedNodeId ||
+      rootId;
+
+    if (!targetId) {
+      return null;
+    }
+
+    const patch: PatchOp = {
+      opId,
+      type,
+      targetId,
+      toParentId
+    };
+    if (typeof raw.index === "number") {
+      (patch as Extract<PatchOp, { type: "moveNode" }>).index = raw.index;
+    }
+    return patch;
+  }
+
+  if (type === "updateProps") {
+    const targetId =
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      (typeof raw.target === "string" && raw.target) ||
+      pathInfo.targetId ||
+      selectedNodeId ||
+      rootId;
+
+    const props = isObject(raw.props)
+      ? raw.props
+      : isObject(raw.value) && !Array.isArray(raw.value)
+        ? raw.value
+        : pathInfo.propKey
+          ? { [pathInfo.propKey]: raw.value }
+          : null;
+
+    if (!targetId || !props) {
+      return null;
+    }
+
+    return {
+      opId,
+      type,
+      targetId,
+      props
+    };
+  }
+
+  if (type === "replaceNode") {
+    const targetId =
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      (typeof raw.target === "string" && raw.target) ||
+      pathInfo.targetId;
+    const node = coerceNode(raw.node ?? raw.value);
+    if (!targetId || !node) {
+      return null;
+    }
+    return { opId, type, targetId, node };
+  }
+
+  if (type === "wrapNode") {
+    const targetId =
+      (typeof raw.targetId === "string" && raw.targetId) ||
+      (typeof raw.target === "string" && raw.target) ||
+      pathInfo.targetId;
+    const wrapper = coerceNode(raw.wrapper ?? raw.node ?? raw.value);
+    if (!targetId || !wrapper) {
+      return null;
+    }
+    return { opId, type, targetId, wrapper };
+  }
+
+  return null;
+}
+
+function toPatchList(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (isObject(value) && Array.isArray(value.patches)) {
+    return value.patches;
+  }
+  if (isObject(value)) {
+    return [value];
+  }
+  return [];
+}
+
+function sanitizePatches(value: unknown, selectedNodeId: string | undefined, rootId: string): PatchOp[] {
+  const rawPatches = toPatchList(value);
   const valid: PatchOp[] = [];
-  for (const raw of candidate) {
+
+  for (const raw of rawPatches) {
     if (!isObject(raw)) {
       continue;
     }
-
-    const type = raw.type;
-    if (typeof type !== "string" || !allowedOps.has(type)) {
-      continue;
+    const normalized = normalizePatch(raw, selectedNodeId, rootId);
+    if (normalized) {
+      valid.push(normalized);
     }
-
-    if (typeof raw.opId !== "string" || raw.opId.length === 0) {
-      continue;
-    }
-
-    if (type === "addNode" && (typeof raw.parentId !== "string" || !isObject(raw.node))) {
-      continue;
-    }
-    if ((type === "removeNode" || type === "replaceNode" || type === "wrapNode" || type === "updateProps" || type === "moveNode") && typeof raw.targetId !== "string") {
-      continue;
-    }
-    if (type === "moveNode" && typeof raw.toParentId !== "string") {
-      continue;
-    }
-    if (type === "updateProps" && !isObject(raw.props)) {
-      continue;
-    }
-    if ((type === "replaceNode" || type === "wrapNode") && !isObject(raw.node ?? raw.wrapper)) {
-      continue;
-    }
-
-    valid.push(raw as unknown as PatchOp);
   }
 
   return valid;
+}
+
+function summarizeNodes(root: AstNode): Array<{ id: string; type: string; parentId: string | null }> {
+  const out: Array<{ id: string; type: string; parentId: string | null }> = [];
+  const stack: Array<{ node: AstNode; parentId: string | null }> = [{ node: root, parentId: null }];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    out.push({ id: current.node.id, type: current.node.type, parentId: current.parentId });
+    for (const child of current.node.children) {
+      stack.push({ node: child, parentId: current.node.id });
+    }
+  }
+
+  return out;
 }
 
 export function canUseLlm(): boolean {
@@ -79,22 +284,27 @@ export async function generatePatchesFromLlm(prompt: string, document: DocumentA
   }
 
   const systemPrompt = [
-    "You are an AI UI patch generator for a constrained AST editor.",
-    "Return ONLY valid JSON. No markdown, no prose.",
-    "Output MUST be either: [PatchOp] OR {\"patches\":[PatchOp]}",
-    "PatchOp types allowed: addNode, removeNode, moveNode, updateProps, replaceNode, wrapNode.",
-    "Never use op/path/value formats.",
-    "For updateProps use: {\"opId\":\"id\",\"type\":\"updateProps\",\"targetId\":\"node-id\",\"props\":{...}}",
-    "For addNode use: {\"opId\":\"id\",\"type\":\"addNode\",\"parentId\":\"node-id\",\"node\":{\"id\":\"new-id\",\"type\":\"Component\",\"props\":{},\"children\":[]}}",
-    "Prefer minimal incremental patches over full rewrites.",
-    "Use existing node ids from the document.",
-    "If unsure, return one updateProps patch for root title."
+    "You are an AI patch generator for a constrained mobile UI AST editor.",
+    "Output ONLY valid JSON.",
+    "Preferred output shape: {\"patches\":[PatchOp,...]}.",
+    "PatchOp fields:",
+    "- addNode: opId,type,parentId,node{id,type,props,children}",
+    "- removeNode: opId,type,targetId",
+    "- moveNode: opId,type,targetId,toParentId,index(optional)",
+    "- updateProps: opId,type,targetId,props",
+    "- replaceNode: opId,type,targetId,node",
+    "- wrapNode: opId,type,targetId,wrapper",
+    "Use existing ids from the provided node index.",
+    "Prefer one to three minimal patches.",
+    "Never return explanations, markdown, or code fences."
   ].join(" ");
 
   const userPrompt = JSON.stringify(
     {
       task: prompt,
       selectedNodeId: selectedNodeId ?? null,
+      rootId: document.root.id,
+      nodeIndex: summarizeNodes(document.root),
       document
     },
     null,
@@ -109,7 +319,8 @@ export async function generatePatchesFromLlm(prompt: string, document: DocumentA
     },
     body: JSON.stringify({
       model,
-      temperature: 0.2,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -132,7 +343,7 @@ export async function generatePatchesFromLlm(prompt: string, document: DocumentA
 
   const jsonPayload = extractJsonPayload(content);
   const parsed = JSON.parse(jsonPayload) as unknown;
-  const patches = sanitizePatches(parsed);
+  const patches = sanitizePatches(parsed, selectedNodeId, document.root.id);
 
   if (patches.length === 0) {
     throw new Error("Model returned no valid patches.");
