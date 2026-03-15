@@ -1,17 +1,27 @@
-import type { DocumentAst } from "@prynt/ast";
+import { cloneDocument, findNodePath, type AstNode, type DocumentAst } from "@prynt/ast";
 import { runEditPipeline } from "@prynt/core";
 import type { PatchOp } from "@prynt/patches";
 import { buildRepairPlan } from "@prynt/repair";
 import { suggestRepairs, validateDocument } from "@prynt/validator";
 
+export interface VersionSnapshot {
+  id: number;
+  reason: string;
+  createdAt: string;
+  document: DocumentAst;
+}
+
 export interface ProjectState {
   document: DocumentAst;
-  history: DocumentAst[];
+  versions: VersionSnapshot[];
+  undoStack: DocumentAst[];
+  redoStack: DocumentAst[];
   patchHistory: PatchOp[][];
 }
 
 export interface ApplyPatchRequest {
   patches: PatchOp[];
+  reason?: string;
 }
 
 export interface ApplyPatchResponse {
@@ -19,6 +29,17 @@ export interface ApplyPatchResponse {
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
   repairSuggestions: string[];
+}
+
+export interface GenerateFromPromptRequest {
+  prompt: string;
+  selectedNodeId?: string;
+}
+
+export interface PromptResult {
+  prompt: string;
+  patches: PatchOp[];
+  response: ApplyPatchResponse;
 }
 
 export interface ValidateRequest {
@@ -39,12 +60,97 @@ export interface RepairApplyResponse {
 export class EditorApiService {
   private readonly projects = new Map<string, ProjectState>();
 
-  createProject(projectId: string, initialDocument: DocumentAst): void {
-    this.projects.set(projectId, {
-      document: initialDocument,
-      history: [initialDocument],
+  createProject(projectId: string, initialDocument: DocumentAst): ProjectState {
+    const firstVersion: VersionSnapshot = {
+      id: 1,
+      reason: "Initial",
+      createdAt: new Date().toISOString(),
+      document: cloneDocument(initialDocument)
+    };
+
+    const project: ProjectState = {
+      document: cloneDocument(initialDocument),
+      versions: [firstVersion],
+      undoStack: [],
+      redoStack: [],
       patchHistory: []
-    });
+    };
+
+    this.projects.set(projectId, project);
+    return project;
+  }
+
+  getProject(projectId: string): ProjectState {
+    return this.requireProject(projectId);
+  }
+
+  listVersions(projectId: string): VersionSnapshot[] {
+    return this.requireProject(projectId).versions;
+  }
+
+  restoreVersion(projectId: string, versionId: number): ApplyPatchResponse {
+    const project = this.requireProject(projectId);
+    const version = project.versions.find((item) => item.id === versionId);
+    if (!version) {
+      throw new Error(`Version not found: ${versionId}`);
+    }
+
+    project.undoStack.push(cloneDocument(project.document));
+    project.redoStack = [];
+    project.document = cloneDocument(version.document);
+
+    return {
+      applied: true,
+      document: project.document,
+      validationIssues: [],
+      repairSuggestions: []
+    };
+  }
+
+  undo(projectId: string): ApplyPatchResponse {
+    const project = this.requireProject(projectId);
+    const previous = project.undoStack.pop();
+    if (!previous) {
+      return {
+        applied: false,
+        document: project.document,
+        validationIssues: [],
+        repairSuggestions: ["Nothing to undo."]
+      };
+    }
+
+    project.redoStack.push(cloneDocument(project.document));
+    project.document = previous;
+
+    return {
+      applied: true,
+      document: project.document,
+      validationIssues: [],
+      repairSuggestions: []
+    };
+  }
+
+  redo(projectId: string): ApplyPatchResponse {
+    const project = this.requireProject(projectId);
+    const next = project.redoStack.pop();
+    if (!next) {
+      return {
+        applied: false,
+        document: project.document,
+        validationIssues: [],
+        repairSuggestions: ["Nothing to redo."]
+      };
+    }
+
+    project.undoStack.push(cloneDocument(project.document));
+    project.document = next;
+
+    return {
+      applied: true,
+      document: project.document,
+      validationIssues: [],
+      repairSuggestions: []
+    };
   }
 
   applyPatch(projectId: string, request: ApplyPatchRequest): ApplyPatchResponse {
@@ -60,18 +166,38 @@ export class EditorApiService {
       };
     }
 
+    project.undoStack.push(cloneDocument(project.document));
+    project.redoStack = [];
+
     project.document = {
       ...result.document,
       version: project.document.version + 1
     };
-    project.history.push(project.document);
     project.patchHistory.push(request.patches);
+
+    project.versions.push({
+      id: project.versions.length + 1,
+      reason: request.reason ?? "Edit",
+      createdAt: new Date().toISOString(),
+      document: cloneDocument(project.document)
+    });
 
     return {
       applied: true,
       document: project.document,
       validationIssues: [],
       repairSuggestions: []
+    };
+  }
+
+  generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): PromptResult {
+    const project = this.requireProject(projectId);
+    const patches = buildPatchesFromPrompt(project.document, request.prompt, request.selectedNodeId);
+    const response = this.applyPatch(projectId, { patches, reason: `Prompt: ${request.prompt}` });
+    return {
+      prompt: request.prompt,
+      patches,
+      response
     };
   }
 
@@ -104,28 +230,13 @@ export class EditorApiService {
       };
     }
 
-    const result = runEditPipeline(project.document, plan.patches);
-    if (!result.applied) {
-      return {
-        applied: false,
-        generatedPatches: plan.patches,
-        document: project.document,
-        validationIssues: result.validation.issues
-      };
-    }
-
-    project.document = {
-      ...result.document,
-      version: project.document.version + 1
-    };
-    project.history.push(project.document);
-    project.patchHistory.push(plan.patches);
+    const result = this.applyPatch(projectId, { patches: plan.patches, reason: "Auto repair" });
 
     return {
-      applied: true,
+      applied: result.applied,
       generatedPatches: plan.patches,
-      document: project.document,
-      validationIssues: []
+      document: result.document,
+      validationIssues: result.validationIssues
     };
   }
 
@@ -138,6 +249,142 @@ export class EditorApiService {
   }
 }
 
+function findFirstNodeByType(root: AstNode, type: string): AstNode | null {
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.type === type) {
+      return current;
+    }
+    stack.push(...current.children);
+  }
+  return null;
+}
+
+function createNode(type: string, id: string, props: Record<string, unknown>, children: AstNode[] = []): AstNode {
+  return { id, type, props, children };
+}
+
+function nextId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildPatchesFromPrompt(document: DocumentAst, prompt: string, selectedNodeId?: string): PatchOp[] {
+  const lower = prompt.toLowerCase();
+  const patches: PatchOp[] = [];
+
+  if (lower.includes("replace") && lower.includes("sidebar") && lower.includes("tabs")) {
+    const sidebar = findFirstNodeByType(document.root, "Sidebar");
+    if (sidebar) {
+      patches.push({ opId: nextId("remove"), type: "removeNode", targetId: sidebar.id });
+    }
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: document.root.id,
+      node: createNode("BottomTabBar", nextId("tabbar"), { tabs: 4 })
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("search")) {
+    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("TextField", nextId("search"), { label: "Search", placeholder: "Search...", minHeight: 44 })
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("button")) {
+    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Button", nextId("button"), { text: "Continue", tone: "primary", size: "md", minHeight: 44 })
+    });
+  }
+
+  if (lower.includes("add") && lower.includes("card")) {
+    const targetParent = selectedNodeId ?? findFirstNodeByType(document.root, "Stack")?.id ?? document.root.id;
+    patches.push({
+      opId: nextId("add"),
+      type: "addNode",
+      parentId: targetParent,
+      node: createNode("Card", nextId("card"), { tone: "surface", radius: "lg" }, [
+        createNode("Heading", nextId("heading"), { text: "New Card", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "Generated from prompt" })
+      ])
+    });
+  }
+
+  if (lower.includes("premium") || lower.includes("modern")) {
+    const stack: AstNode[] = [document.root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node) {
+        continue;
+      }
+
+      if (node.type === "Card") {
+        patches.push({
+          opId: nextId("style"),
+          type: "updateProps",
+          targetId: node.id,
+          props: { tone: "accent", radius: "xl" }
+        });
+      }
+      if (node.type === "Heading") {
+        patches.push({
+          opId: nextId("style"),
+          type: "updateProps",
+          targetId: node.id,
+          props: { size: "2xl" }
+        });
+      }
+
+      stack.push(...node.children);
+    }
+  }
+
+  if (lower.includes("mobile") && lower.includes("friendly")) {
+    const stack: AstNode[] = [document.root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node) {
+        continue;
+      }
+      if (node.type === "Grid") {
+        patches.push({
+          opId: nextId("mobile"),
+          type: "updateProps",
+          targetId: node.id,
+          props: { columns: 1 }
+        });
+      }
+      stack.push(...node.children);
+    }
+  }
+
+  if (patches.length === 0) {
+    const titleNode = findNodePath(document.root, document.root.id)?.node;
+    if (titleNode) {
+      patches.push({
+        opId: nextId("fallback"),
+        type: "updateProps",
+        targetId: titleNode.id,
+        props: { title: String(titleNode.props.title ?? "Screen") + " (updated)" }
+      });
+    }
+  }
+
+  return patches;
+}
+
 export function buildStubInitialDocument(projectId: string): DocumentAst {
   return {
     schemaVersion: "1.0.0",
@@ -146,7 +393,7 @@ export function buildStubInitialDocument(projectId: string): DocumentAst {
     root: {
       id: "screen-root",
       type: "Screen",
-      props: { title: "Home" },
+      props: { title: "Dashboard" },
       children: [
         {
           id: "topbar-1",
@@ -173,6 +420,12 @@ export function buildStubInitialDocument(projectId: string): DocumentAst {
                       id: "heading-1",
                       type: "Heading",
                       props: { text: "Overview", size: "xl" },
+                      children: []
+                    },
+                    {
+                      id: "text-1",
+                      type: "Text",
+                      props: { text: "Today\'s activity and performance" },
                       children: []
                     },
                     {

@@ -1,17 +1,19 @@
 {
   "name": "prynt",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "dev": "concurrently \"npm run dev --workspace @prynt/api\" \"npm run dev --workspace @prynt/web\"",
+    "build": "tsc -b && npm run build --workspace @prynt/web && npm run build --workspace @prynt/api",
     "typecheck": "tsc -b --pretty",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo apps/*/dist packages/*/dist"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "typescript": "^5.7.3"
   }
 }
