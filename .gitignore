@@ -5,3 +5,7 @@ dist
 
 *.tsbuildinfo
 apps/api/data/
+.env*
+!.env.example
+apps/api/.env*
+!apps/api/.env.example

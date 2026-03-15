@@ -57,8 +57,13 @@ npm run dev
 
 ### Testing with local AI keys from another project
 
-The API will automatically try loading env values from:
-- `/Users/abel/Documents/Projects/Adaptmycv/.env.local`
+The API now loads env values in this priority order:
+1. `./.env.local`
+2. `./.env`
+3. `./apps/api/.env.local`
+4. `./apps/api/.env`
+5. `PRYNT_AI_ENV_PATH` (if set)
+6. fallback legacy external path (`/Users/abel/Documents/Projects/Adaptmycv/.env.local`)
 
 Supported vars:
 - `OPENROUTER_API_KEY` or `VITE_OPENROUTER_API_KEY`
@@ -68,6 +73,7 @@ Supported vars:
 Optional:
 - `PRYNT_AI_ENV_PATH` to override env file path
 - `PRYNT_AI_DEBUG=1` to log when rule fallback is used
+- `PRYNT_DATA_DIR` to override project persistence directory
 
 ## Build and typecheck
 

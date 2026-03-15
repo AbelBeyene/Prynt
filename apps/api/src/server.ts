@@ -7,6 +7,10 @@ import { buildStubInitialDocument, EditorApiService } from "./index.js";
 
 function loadLocalAiEnv(): void {
   const candidates = [
+    path.resolve(process.cwd(), ".env.local"),
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), "apps/api/.env.local"),
+    path.resolve(process.cwd(), "apps/api/.env"),
     process.env.PRYNT_AI_ENV_PATH,
     "/Users/abel/Documents/Projects/Adaptmycv/.env.local",
     path.resolve(process.cwd(), "../Adaptmycv/.env.local"),
