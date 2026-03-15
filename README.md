@@ -1,42 +1,76 @@
-# Prynt - Prompt-Native UX Editor Foundation
+# Prynt: Prompt-Native UX Design Editor (Full-Stack MVP)
 
-This repository now contains a production-fit foundation for a prompt-native UX design editor where edits are not prompt-only.
+Prynt is a browser-based UX editor with a structured JSON AST source of truth, patch-based edits, validation gates, and a React canvas.
 
-## Implemented Architecture
+## What is implemented
 
-- Monorepo (`apps/*`, `packages/*`)
-- Canonical source of truth: `DocumentAst` JSON
-- Unified edit pipeline: `PatchOps -> Validate -> (Repair) -> Apply`
-- Multi-mode editing support (prompt, visual, inspector, structure, source, patch)
-- Mobile-first constraints in validator
+- Prompt-native editing with deterministic patch operations.
+- Multi-modal editing paths:
+  - Prompt bar
+  - Layer tree selection
+  - Property inspector edits
+  - Source inspection (JSON AST + DSL)
+  - Patch console (preview + apply)
+- Validation and repair pipeline before apply.
+- Version history with restore.
+- Undo/redo.
+- Mobile device previews: iPhone (390), Android (360), Tablet (768).
 
-## Workspace Layout
+## Architecture
 
-- `apps/api`: in-memory API service with patch/validate/repair flows
-- `apps/web`: editor engine/state model for multi-modal editing
-- `packages/ast`: AST contracts + traversal + cloning
-- `packages/dsl`: AST -> DSL serializer and bootstrap DSL parser
-- `packages/patches`: reversible patch application engine
-- `packages/validator`: schema + child + token + mobile rule validation
-- `packages/repair`: automatic repair patch planning
-- `packages/tokens`: design token definitions and validation helpers
-- `packages/component-registry`: typed component contracts and child rules
-- `packages/core`: unified edit pipeline orchestration
+- `apps/api`:
+  - Express API
+  - Project/document state management
+  - Prompt-to-patch generation (deterministic MVP rules)
+  - Patch apply/preview, repair suggest/apply, version restore
+- `apps/web`:
+  - React + Vite editor UI
+  - Canvas renderer, layer tree, inspector, prompt controls
+- `packages/*` shared domain modules:
+  - `ast`, `patches`, `validator`, `repair`, `dsl`, `tokens`, `component-registry`, `core`
 
-## Key Flows
+## Run locally
 
-- Prompt edits -> patch ops -> shared pipeline
-- Visual/inspector/source edits -> patch ops -> same pipeline
-- Invalid edits -> repair suggestions + generated repair patch candidates
-- Undo/redo powered by inverse patch generation
+1. Install dependencies:
 
-## Scripts
+```bash
+npm install
+```
 
-- `npm run typecheck`
-- `npm run build`
+2. Start API + web app:
+
+```bash
+npm run dev
+```
+
+3. Open:
+- Web: `http://localhost:5173`
+- API health: `http://localhost:4000/health`
+
+## Build and typecheck
+
+```bash
+npm run typecheck
+npm run build
+```
+
+## API endpoints (MVP)
+
+- `POST /projects`
+- `GET /projects/:projectId`
+- `POST /projects/:projectId/prompt`
+- `POST /projects/:projectId/patch`
+- `POST /projects/:projectId/patch/preview`
+- `POST /projects/:projectId/undo`
+- `POST /projects/:projectId/redo`
+- `POST /projects/:projectId/repair/suggest`
+- `POST /projects/:projectId/repair/apply`
+- `GET /projects/:projectId/versions`
+- `POST /projects/:projectId/versions/:versionId/restore`
+- `GET /projects/:projectId/dsl`
 
 ## Notes
 
-- This is a foundation slice designed for safe iteration.
-- Persistence is currently in-memory at API layer.
-- DSL parser is intentionally minimal in this first pass and should be expanded in the next milestone.
+- Current persistence is in-memory for speed of iteration.
+- The prompt engine is deterministic/rule-based in this MVP; easy to replace with an LLM backend using the existing patch contract.
+- Collaboration/CRDT and export pipelines are intentionally deferred until after this single-user MVP.
