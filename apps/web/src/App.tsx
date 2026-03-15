@@ -175,6 +175,8 @@ export function App() {
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const canvasHoverRef = useRef(false);
+  const gestureScaleRef = useRef<number | null>(null);
 
   const phoneWidth = useMemo(() => (device === "android" ? 360 : device === "tablet" ? 768 : 390), [device]);
 
@@ -579,12 +581,10 @@ export function App() {
   }
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
-    const onWheel = (event: WheelEvent) => {
+    const onWheelCapture = (event: WheelEvent) => {
+      if (!canvasHoverRef.current) {
+        return;
+      }
       const isZoomGesture = event.ctrlKey || event.metaKey || Math.abs(event.deltaZ) > 0;
       if (!isZoomGesture) {
         return;
@@ -593,18 +593,46 @@ export function App() {
       setZoom((current) => clampZoom(current + (event.deltaY < 0 ? 0.08 : -0.08)));
     };
 
-    const preventGesture = (event: Event) => {
+    const onGestureStart = (event: Event) => {
+      if (!canvasHoverRef.current) {
+        return;
+      }
       event.preventDefault();
+      const scale = (event as { scale?: number }).scale;
+      gestureScaleRef.current = typeof scale === "number" ? scale : 1;
     };
 
-    viewport.addEventListener("wheel", onWheel, { passive: false });
-    viewport.addEventListener("gesturestart", preventGesture, { passive: false });
-    viewport.addEventListener("gesturechange", preventGesture, { passive: false });
+    const onGestureChange = (event: Event) => {
+      if (!canvasHoverRef.current) {
+        return;
+      }
+      event.preventDefault();
+      const scale = (event as { scale?: number }).scale;
+      if (typeof scale !== "number") {
+        return;
+      }
+      const previous = gestureScaleRef.current ?? scale;
+      const diff = scale - previous;
+      if (Math.abs(diff) > 0.01) {
+        setZoom((current) => clampZoom(current + diff * 0.4));
+        gestureScaleRef.current = scale;
+      }
+    };
+
+    const onGestureEnd = () => {
+      gestureScaleRef.current = null;
+    };
+
+    window.addEventListener("wheel", onWheelCapture, { passive: false, capture: true });
+    window.addEventListener("gesturestart", onGestureStart, { passive: false, capture: true });
+    window.addEventListener("gesturechange", onGestureChange, { passive: false, capture: true });
+    window.addEventListener("gestureend", onGestureEnd, { passive: false, capture: true });
 
     return () => {
-      viewport.removeEventListener("wheel", onWheel);
-      viewport.removeEventListener("gesturestart", preventGesture);
-      viewport.removeEventListener("gesturechange", preventGesture);
+      window.removeEventListener("wheel", onWheelCapture, true);
+      window.removeEventListener("gesturestart", onGestureStart, true);
+      window.removeEventListener("gesturechange", onGestureChange, true);
+      window.removeEventListener("gestureend", onGestureEnd, true);
     };
   }, []);
 
@@ -678,7 +706,18 @@ export function App() {
             </div>
           </div>
 
-          <div ref={viewportRef} className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`} onMouseDown={handleCanvasBackgroundMouseDown}>
+          <div
+            ref={viewportRef}
+            className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`}
+            onMouseEnter={() => {
+              canvasHoverRef.current = true;
+            }}
+            onMouseLeave={() => {
+              canvasHoverRef.current = false;
+              gestureScaleRef.current = null;
+            }}
+            onMouseDown={handleCanvasBackgroundMouseDown}
+          >
             <div className="canvas-stage" style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}>
               <div className="canvas-zoom-layer" style={{ transform: `scale(${zoom})` }}>
                 {canvasItems.map((item) => {
