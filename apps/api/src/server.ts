@@ -120,6 +120,28 @@ app.post("/projects/:projectId/prompt/simulate", async (req, res) => {
   }
 });
 
+app.get("/projects/:projectId/prompt/history", (req, res) => {
+  try {
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 24;
+    const query = typeof req.query.query === "string" ? req.query.query : "";
+    const items = api.listPromptHistory(req.params.projectId, Number.isFinite(limit) ? limit : 24, query);
+    res.json({ items });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/projects/:projectId/prompt/suggestions", (req, res) => {
+  try {
+    const query = typeof req.query.query === "string" ? req.query.query : "";
+    const fileId = typeof req.query.fileId === "string" ? req.query.fileId : undefined;
+    const items = api.suggestPrompts(req.params.projectId, fileId, query);
+    res.json({ items });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
 app.post("/projects/:projectId/intent", (req, res) => {
   try {
     const intent = api.parseIntent(req.params.projectId, String(req.body?.prompt ?? ""), req.body?.fileId);

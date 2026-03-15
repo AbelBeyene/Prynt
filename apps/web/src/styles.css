@@ -19,6 +19,7 @@
   --border: #2b3548;
   --muted: #8392b6;
   --danger: #fb7185;
+  --canvas-tone: #0e1420;
 }
 
 * {
@@ -333,7 +334,7 @@ body {
     linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
     radial-gradient(circle at 18% 18%, rgba(79, 209, 197, 0.08) 0, transparent 30%),
     radial-gradient(circle at 80% 75%, rgba(96, 165, 250, 0.08) 0, transparent 30%),
-    #0e1420;
+    var(--canvas-tone);
   background-size: 24px 24px;
   overflow: auto;
   height: 100%;
@@ -512,6 +513,13 @@ body {
   margin-bottom: 10px;
 }
 
+.theme-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
 .design-lab input[type="color"] {
   width: 100%;
   height: 30px;
@@ -526,6 +534,27 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin: 8px 0;
+}
+
+.tone-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tone-chip {
+  border: 1px solid #415171;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #25344c, #1f2a3c);
+  color: #dbe7ff;
+  font-size: 11px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.tone-chip:hover {
+  border-color: #4f7fca;
 }
 
 .tab-active {
@@ -685,6 +714,52 @@ body {
 .prompt-chip:hover {
   border-color: #3f6fbd;
   box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2) inset;
+}
+
+.prompt-chip-suggested {
+  color: #d2e6ff;
+  border-color: #345d98;
+  background: linear-gradient(180deg, #233654, #1d2f49);
+}
+
+.prompt-library-search {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.prompt-library-search input {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #1b2334, #171e2d);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font: inherit;
+  height: 32px;
+}
+
+.prompt-library-search span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.prompt-history-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.history-chip {
+  border: 1px solid #33425f;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1d2738, #182233);
+  color: #becee9;
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .footer {

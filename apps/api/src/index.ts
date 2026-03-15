@@ -33,6 +33,7 @@ export interface FileSummary {
 export interface ProjectState {
   files: Map<string, FileState>;
   fileOrder: string[];
+  promptHistory: PromptHistoryEntry[];
 }
 
 export interface IntentSpec {
@@ -42,6 +43,21 @@ export interface IntentSpec {
   targetFileIds: string[];
   confidence: number;
   warnings: string[];
+}
+
+export interface PromptHistoryEntry {
+  id: string;
+  prompt: string;
+  action: IntentSpec["action"];
+  targetFileIds: string[];
+  source: "llm" | "rule" | "mixed";
+  createdAt: string;
+}
+
+export interface PromptSuggestion {
+  id: string;
+  text: string;
+  category: "layout" | "content" | "style" | "navigation" | "input";
 }
 
 export interface ApplyPatchRequest {
@@ -137,7 +153,8 @@ export class EditorApiService {
 
     const project: ProjectState = {
       files: new Map([[fileId, file]]),
-      fileOrder: [fileId]
+      fileOrder: [fileId],
+      promptHistory: []
     };
 
     this.projects.set(projectId, project);
@@ -207,6 +224,40 @@ export class EditorApiService {
   listVersions(projectId: string, fileId?: string): VersionSnapshot[] {
     const { file } = this.resolveFile(projectId, fileId);
     return file.versions;
+  }
+
+  listPromptHistory(projectId: string, limit = 24, query = ""): PromptHistoryEntry[] {
+    const project = this.requireProject(projectId);
+    const needle = query.trim().toLowerCase();
+    const filtered = needle
+      ? project.promptHistory.filter((item) => item.prompt.toLowerCase().includes(needle))
+      : project.promptHistory;
+    return filtered.slice(-Math.max(1, limit)).reverse();
+  }
+
+  suggestPrompts(projectId: string, fileId?: string, query = ""): PromptSuggestion[] {
+    const { file } = this.resolveFile(projectId, fileId);
+    const staticSuggestions: PromptSuggestion[] = [
+      { id: "s-layout-1", text: "Add a sticky CTA at the bottom of this screen", category: "layout" },
+      { id: "s-content-1", text: "Add a compact summary card below the top section", category: "content" },
+      { id: "s-input-1", text: "Place a search field above the list", category: "input" },
+      { id: "s-nav-1", text: "Convert this flow to use a bottom tab bar", category: "navigation" },
+      { id: "s-style-1", text: "Make the screen feel more premium with better spacing", category: "style" }
+    ];
+
+    const rootTitle = String(file.document.root.props.title ?? file.name);
+    const dynamicSuggestions: PromptSuggestion[] = [
+      { id: `d-${file.fileId}-1`, text: `On ${file.name}, add a primary action button`, category: "input" },
+      { id: `d-${file.fileId}-2`, text: `Restyle ${rootTitle} with stronger hierarchy`, category: "style" },
+      { id: `d-${file.fileId}-3`, text: `Add a secondary info section in ${file.name}`, category: "content" }
+    ];
+
+    const all = [...dynamicSuggestions, ...staticSuggestions];
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+      return all;
+    }
+    return all.filter((item) => item.text.toLowerCase().includes(needle));
   }
 
   restoreVersion(projectId: string, versionId: number, fileId?: string): ApplyPatchResponse {
@@ -348,6 +399,17 @@ export class EditorApiService {
     }
 
     const source = results.every((result) => result.source === primary.source) ? primary.source : "mixed";
+    project.promptHistory.push({
+      id: nextId("prompt"),
+      prompt: request.prompt,
+      action: intent.action,
+      targetFileIds: intent.targetFileIds,
+      source,
+      createdAt: new Date().toISOString()
+    });
+    if (project.promptHistory.length > 200) {
+      project.promptHistory = project.promptHistory.slice(-200);
+    }
 
     return {
       prompt: request.prompt,

@@ -44,6 +44,21 @@ interface IntentSpec {
   warnings: string[];
 }
 
+interface PromptHistoryEntry {
+  id: string;
+  prompt: string;
+  action: IntentSpec["action"];
+  targetFileIds: string[];
+  source: "llm" | "rule" | "mixed";
+  createdAt: string;
+}
+
+interface PromptSuggestion {
+  id: string;
+  text: string;
+  category: "layout" | "content" | "style" | "navigation" | "input";
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -165,10 +180,15 @@ export function App() {
   const [uiAccent, setUiAccent] = useState("#5eead4");
   const [uiAccent2, setUiAccent2] = useState("#60a5fa");
   const [uiPanelTone, setUiPanelTone] = useState("#151b27");
+  const [canvasTone, setCanvasTone] = useState("#0e1420");
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
   const [promptWarnings, setPromptWarnings] = useState<string[]>([]);
+  const [promptLibraryQuery, setPromptLibraryQuery] = useState("");
+  const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
+  const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
+  const [isRefreshingPromptLibrary, setIsRefreshingPromptLibrary] = useState(false);
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
@@ -179,6 +199,7 @@ export function App() {
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const promptInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const canvasHoverRef = useRef(false);
   const gestureScaleRef = useRef<number | null>(null);
@@ -233,11 +254,13 @@ export function App() {
         accent?: string;
         accent2?: string;
         panel?: string;
+        canvas?: string;
         device?: DevicePreset;
       };
       if (parsed.accent) setUiAccent(parsed.accent);
       if (parsed.accent2) setUiAccent2(parsed.accent2);
       if (parsed.panel) setUiPanelTone(parsed.panel);
+      if (parsed.canvas) setCanvasTone(parsed.canvas);
       if (parsed.device) setDevice(parsed.device);
     } catch {
       // ignore invalid persisted state
@@ -251,17 +274,19 @@ export function App() {
         accent: uiAccent,
         accent2: uiAccent2,
         panel: uiPanelTone,
+        canvas: canvasTone,
         device
       })
     );
-  }, [uiAccent, uiAccent2, uiPanelTone, device]);
+  }, [uiAccent, uiAccent2, uiPanelTone, canvasTone, device]);
 
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--accent", uiAccent);
     root.style.setProperty("--accent-2", uiAccent2);
     root.style.setProperty("--panel", uiPanelTone);
-  }, [uiAccent, uiAccent2, uiPanelTone]);
+    root.style.setProperty("--canvas-tone", canvasTone);
+  }, [uiAccent, uiAccent2, uiPanelTone, canvasTone]);
 
   function patchFileDocument(fileId: string, document: DocumentAst) {
     setFiles((current) => current.map((file) => (file.fileId === fileId ? { ...file, document } : file)));
@@ -270,6 +295,27 @@ export function App() {
   async function refreshVersions(currentProjectId: string, fileId: string) {
     const response = await apiRequest<{ versions: VersionSnapshot[] }>(`/projects/${currentProjectId}/versions?fileId=${encodeURIComponent(fileId)}`);
     setVersions(response.versions.slice().reverse());
+  }
+
+  async function refreshPromptLibrary(currentProjectId: string, fileId?: string, query = "") {
+    setIsRefreshingPromptLibrary(true);
+    try {
+      const [history, suggestions] = await Promise.all([
+        apiRequest<{ items: PromptHistoryEntry[] }>(
+          `/projects/${currentProjectId}/prompt/history?limit=24&query=${encodeURIComponent(query)}`
+        ),
+        apiRequest<{ items: PromptSuggestion[] }>(
+          `/projects/${currentProjectId}/prompt/suggestions?fileId=${encodeURIComponent(fileId ?? "")}&query=${encodeURIComponent(query)}`
+        )
+      ]);
+      setPromptHistory(history.items);
+      setPromptSuggestions(suggestions.items);
+    } catch {
+      setPromptHistory([]);
+      setPromptSuggestions([]);
+    } finally {
+      setIsRefreshingPromptLibrary(false);
+    }
   }
 
   useEffect(() => {
@@ -342,6 +388,7 @@ export function App() {
           { id: "phone-main", type: "phone", fileId: firstFile.fileId, x: 760, y: 380, width: phoneWidth, height: 760 }
         ]);
         await refreshVersions(created.projectId, firstFile.fileId);
+        await refreshPromptLibrary(created.projectId, firstFile.fileId);
       }
 
       setStatus("Project ready");
@@ -364,6 +411,14 @@ export function App() {
     const rootId = activeFile?.document.root.id;
     if (rootId) setSelectedId(rootId);
   }, [projectId, activeFileId]);
+
+  useEffect(() => {
+    if (!projectId || !activeFileId) return;
+    const timer = window.setTimeout(() => {
+      void refreshPromptLibrary(projectId, activeFileId, promptLibraryQuery);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [projectId, activeFileId, promptLibraryQuery]);
 
   async function applyPatch(patches: PatchOp[], reason: string) {
     if (!projectId || !activeFileId) return;
@@ -435,6 +490,7 @@ export function App() {
           : response.response.repairSuggestions.join(" | ")
       );
       await refreshVersions(projectId, response.response.fileId);
+      await refreshPromptLibrary(projectId, response.response.fileId, promptLibraryQuery);
     } catch (error) {
       setStatus(`Prompt failed: ${(error as Error).message}`);
     } finally {
@@ -653,6 +709,34 @@ export function App() {
     viewport.scrollTop = 220;
   }
 
+  function applyThemePreset(preset: "teal" | "violet" | "amber" | "mono") {
+    if (preset === "teal") {
+      setUiAccent("#5eead4");
+      setUiAccent2("#60a5fa");
+      setUiPanelTone("#151b27");
+      setCanvasTone("#0e1420");
+      return;
+    }
+    if (preset === "violet") {
+      setUiAccent("#a78bfa");
+      setUiAccent2("#38bdf8");
+      setUiPanelTone("#1a1832");
+      setCanvasTone("#101028");
+      return;
+    }
+    if (preset === "amber") {
+      setUiAccent("#fbbf24");
+      setUiAccent2("#f97316");
+      setUiPanelTone("#2b1f18");
+      setCanvasTone("#201811");
+      return;
+    }
+    setUiAccent("#93c5fd");
+    setUiAccent2("#94a3b8");
+    setUiPanelTone("#1b202b");
+    setCanvasTone("#10141d");
+  }
+
   function handleCanvasBackgroundMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
     if (!(spacePressed || event.button === 1)) return;
     const viewport = viewportRef.current;
@@ -733,6 +817,15 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTypingField = target ? target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable : false;
+
+      if (!isTypingField && event.key === "/") {
+        event.preventDefault();
+        promptInputRef.current?.focus();
+        return;
+      }
+
       if (event.metaKey || event.ctrlKey) {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -921,6 +1014,15 @@ export function App() {
                     )}
                   </label>
                 ))}
+                {Object.prototype.hasOwnProperty.call(selectedNode.props, "tone") ? (
+                  <div className="tone-quick-row">
+                    {["primary", "secondary", "accent", "surface", "muted", "danger"].map((tone) => (
+                      <button key={tone} type="button" className="tone-chip" onClick={() => void updateProp("tone", tone)}>
+                        {tone}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="inspector-actions">
                   <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Add Card</button>
                   <button type="button" className="btn-soft" onClick={() => void addNode("Button")}>Add Button</button>
@@ -964,6 +1066,16 @@ export function App() {
               <span className="prop-label">Panel Tone</span>
               <input type="color" value={uiPanelTone} onChange={(event) => setUiPanelTone(event.target.value)} />
             </label>
+            <label className="prop-field">
+              <span className="prop-label">Canvas Tone</span>
+              <input type="color" value={canvasTone} onChange={(event) => setCanvasTone(event.target.value)} />
+            </label>
+          </div>
+          <div className="theme-presets">
+            <button type="button" className="btn-soft" onClick={() => applyThemePreset("teal")}>Teal</button>
+            <button type="button" className="btn-soft" onClick={() => applyThemePreset("violet")}>Violet</button>
+            <button type="button" className="btn-soft" onClick={() => applyThemePreset("amber")}>Amber</button>
+            <button type="button" className="btn-soft" onClick={() => applyThemePreset("mono")}>Mono</button>
           </div>
 
           <h3>Versions</h3>
@@ -984,6 +1096,7 @@ export function App() {
         </div>
         <div className="prompt-dock-main">
           <input
+            ref={promptInputRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={(event) => {
@@ -1001,10 +1114,30 @@ export function App() {
             {isApplyingPrompt ? "Applying..." : "Apply"}
           </button>
         </div>
+        <div className="prompt-library-search">
+          <input
+            value={promptLibraryQuery}
+            onChange={(event) => setPromptLibraryQuery(event.target.value)}
+            placeholder="Search prompt history and suggestions..."
+          />
+          <span>{isRefreshingPromptLibrary ? "Updating..." : `${promptSuggestions.length} suggestions`}</span>
+        </div>
         <div className="prompt-chip-row">
           {quickPrompts.map((chip) => (
             <button key={chip} type="button" className="prompt-chip" onClick={() => void runQuickPrompt(chip)}>
               {chip}
+            </button>
+          ))}
+          {promptSuggestions.slice(0, 6).map((item) => (
+            <button key={item.id} type="button" className="prompt-chip prompt-chip-suggested" onClick={() => void runQuickPrompt(item.text)}>
+              {item.text}
+            </button>
+          ))}
+        </div>
+        <div className="prompt-history-row">
+          {promptHistory.slice(0, 4).map((item) => (
+            <button key={item.id} type="button" className="history-chip" onClick={() => setPrompt(item.prompt)}>
+              {item.prompt}
             </button>
           ))}
         </div>
