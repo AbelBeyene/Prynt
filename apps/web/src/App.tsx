@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MouseEventHandler, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MouseEventHandler } from "react";
 import type { AstNode, DocumentAst } from "@prynt/ast";
 import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
@@ -578,11 +578,35 @@ export function App() {
     event.stopPropagation();
   }
 
-  function handleCanvasWheel(event: ReactWheelEvent<HTMLDivElement>) {
-    if (!(event.ctrlKey || event.metaKey)) return;
-    event.preventDefault();
-    setZoom((current) => clampZoom(current + (event.deltaY < 0 ? 0.08 : -0.08)));
-  }
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const onWheel = (event: WheelEvent) => {
+      const isZoomGesture = event.ctrlKey || event.metaKey || Math.abs(event.deltaZ) > 0;
+      if (!isZoomGesture) {
+        return;
+      }
+      event.preventDefault();
+      setZoom((current) => clampZoom(current + (event.deltaY < 0 ? 0.08 : -0.08)));
+    };
+
+    const preventGesture = (event: Event) => {
+      event.preventDefault();
+    };
+
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    viewport.addEventListener("gesturestart", preventGesture, { passive: false });
+    viewport.addEventListener("gesturechange", preventGesture, { passive: false });
+
+    return () => {
+      viewport.removeEventListener("wheel", onWheel);
+      viewport.removeEventListener("gesturestart", preventGesture);
+      viewport.removeEventListener("gesturechange", preventGesture);
+    };
+  }, []);
 
   const canvasDocument = (previewDocument ?? activeDocument) as DocumentAst | null;
 
@@ -654,7 +678,7 @@ export function App() {
             </div>
           </div>
 
-          <div ref={viewportRef} className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`} onMouseDown={handleCanvasBackgroundMouseDown} onWheel={handleCanvasWheel}>
+          <div ref={viewportRef} className={`canvas-viewport ${spacePressed ? "space-pan" : ""}`} onMouseDown={handleCanvasBackgroundMouseDown}>
             <div className="canvas-stage" style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}>
               <div className="canvas-zoom-layer" style={{ transform: `scale(${zoom})` }}>
                 {canvasItems.map((item) => {
