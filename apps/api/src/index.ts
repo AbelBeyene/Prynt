@@ -6,6 +6,8 @@ import { buildRepairPlan } from "@prynt/repair";
 import { suggestRepairs, validateDocument } from "@prynt/validator";
 import { canUseLlm, generatePatchesFromLlm } from "./ai.js";
 import Fuse from "fuse.js";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 export interface VersionSnapshot {
   id: number;
@@ -174,10 +176,33 @@ export interface ApplyTemplateRequest {
   templateId: string;
 }
 
+interface PersistedProjectState {
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
+  fileOrder: string[];
+  promptHistory: PromptHistoryEntry[];
+  files: FileState[];
+}
+
 export class EditorApiService {
   private readonly projects = new Map<string, ProjectState>();
+  private readonly dataDir: string;
+
+  constructor() {
+    this.dataDir = process.env.PRYNT_DATA_DIR
+      ? path.resolve(process.env.PRYNT_DATA_DIR)
+      : path.resolve(process.cwd(), "data", "projects");
+    mkdirSync(this.dataDir, { recursive: true });
+    this.loadPersistedProjects();
+  }
 
   createProject(projectId: string, initialDocument: DocumentAst): ProjectState {
+    const existing = this.projects.get(projectId);
+    if (existing) {
+      return existing;
+    }
+
     const fileId = "file-1";
     const file = createFileState(fileId, "Main Screen", {
       ...cloneDocument(initialDocument),
@@ -196,6 +221,7 @@ export class EditorApiService {
     };
 
     this.projects.set(projectId, project);
+    this.persistProject(project);
     return project;
   }
 
@@ -246,6 +272,7 @@ export class EditorApiService {
     project.files.set(fileId, next);
     project.fileOrder.push(fileId);
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
 
     return {
       fileId,
@@ -263,6 +290,7 @@ export class EditorApiService {
     }
     file.name = nextName;
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
     return {
       fileId: file.fileId,
       name: file.name,
@@ -283,6 +311,7 @@ export class EditorApiService {
     project.files.set(nextIdValue, next);
     project.fileOrder.push(nextIdValue);
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
     return { fileId: next.fileId, name: next.name, document: cloneDocument(next.document) };
   }
 
@@ -297,6 +326,7 @@ export class EditorApiService {
     project.files.delete(fileId);
     project.fileOrder = project.fileOrder.filter((id) => id !== fileId);
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
     return {
       deleted: true,
       fileId,
@@ -335,6 +365,7 @@ export class EditorApiService {
       document: cloneDocument(file.document)
     });
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
     return { fileId: file.fileId, name: file.name, document: cloneDocument(file.document) };
   }
 
@@ -420,6 +451,9 @@ export class EditorApiService {
     file.undoStack.push(cloneDocument(file.document));
     file.redoStack = [];
     file.document = cloneDocument(version.document);
+    const project = this.requireProject(projectId);
+    project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
 
     return {
       applied: true,
@@ -451,6 +485,9 @@ export class EditorApiService {
 
     file.redoStack.push(cloneDocument(file.document));
     file.document = previous;
+    const project = this.requireProject(projectId);
+    project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
 
     return {
       applied: true,
@@ -482,6 +519,9 @@ export class EditorApiService {
 
     file.undoStack.push(cloneDocument(file.document));
     file.document = next;
+    const project = this.requireProject(projectId);
+    project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
 
     return {
       applied: true,
@@ -561,6 +601,7 @@ export class EditorApiService {
       project.promptHistory = project.promptHistory.slice(-200);
     }
     project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
 
     return {
       prompt: request.prompt,
@@ -792,6 +833,7 @@ export class EditorApiService {
         const project = [...this.projects.values()].find((entry) => entry.files.has(file.fileId));
         if (project) {
           project.updatedAt = new Date().toISOString();
+          this.persistProject(project);
         }
       }
 
@@ -831,6 +873,7 @@ export class EditorApiService {
             const project = [...this.projects.values()].find((entry) => entry.files.has(file.fileId));
             if (project) {
               project.updatedAt = new Date().toISOString();
+              this.persistProject(project);
             }
           }
 
@@ -860,6 +903,65 @@ export class EditorApiService {
       warnings: ["Patch failed validation and could not be repaired."],
       autoRepaired: false
     };
+  }
+
+  private loadPersistedProjects(): void {
+    const files = existsSync(this.dataDir) ? readdirSync(this.dataDir) : [];
+    for (const fileName of files) {
+      if (!fileName.endsWith(".json")) continue;
+      const filePath = path.join(this.dataDir, fileName);
+      try {
+        const raw = readFileSync(filePath, "utf8");
+        const parsed = JSON.parse(raw) as PersistedProjectState;
+        if (!parsed.projectId || !Array.isArray(parsed.files) || !Array.isArray(parsed.fileOrder)) {
+          continue;
+        }
+        const fileMap = new Map<string, FileState>();
+        for (const entry of parsed.files) {
+          fileMap.set(entry.fileId, {
+            ...entry,
+            document: cloneDocument(entry.document),
+            versions: entry.versions.map((version) => ({ ...version, document: cloneDocument(version.document) })),
+            undoStack: (entry.undoStack ?? []).map((doc) => cloneDocument(doc)),
+            redoStack: (entry.redoStack ?? []).map((doc) => cloneDocument(doc)),
+            patchHistory: entry.patchHistory ?? []
+          });
+        }
+        this.projects.set(parsed.projectId, {
+          projectId: parsed.projectId,
+          createdAt: parsed.createdAt ?? new Date().toISOString(),
+          updatedAt: parsed.updatedAt ?? new Date().toISOString(),
+          fileOrder: parsed.fileOrder.filter((id) => fileMap.has(id)),
+          promptHistory: parsed.promptHistory ?? [],
+          files: fileMap
+        });
+      } catch {
+        // skip invalid persisted files
+      }
+    }
+  }
+
+  private persistProject(project: ProjectState): void {
+    const filePath = path.join(this.dataDir, `${project.projectId}.json`);
+    const payload: PersistedProjectState = {
+      projectId: project.projectId,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      fileOrder: [...project.fileOrder],
+      promptHistory: [...project.promptHistory],
+      files: project.fileOrder
+        .map((fileId) => project.files.get(fileId))
+        .filter((file): file is FileState => Boolean(file))
+        .map((file) => ({
+          ...file,
+          document: cloneDocument(file.document),
+          versions: file.versions.map((version) => ({ ...version, document: cloneDocument(version.document) })),
+          undoStack: file.undoStack.map((doc) => cloneDocument(doc)),
+          redoStack: file.redoStack.map((doc) => cloneDocument(doc)),
+          patchHistory: file.patchHistory.map((entry) => [...entry])
+        }))
+    };
+    writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
   }
 
   private requireProject(projectId: string): ProjectState {

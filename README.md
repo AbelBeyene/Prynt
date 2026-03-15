@@ -7,6 +7,7 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Prompt-native editing with deterministic patch operations.
 - Intent-aware prompt parsing with confidence and warnings.
 - Production API enhancements: request IDs, endpoint-level metrics, and structured error payloads.
+- Durable API persistence: projects are saved to disk and reloaded on server restart.
 - Multi-modal editing paths:
   - Prompt bar
   - Layer tree selection
@@ -102,6 +103,6 @@ npm run build
 
 ## Notes
 
-- Current persistence is in-memory for speed of iteration.
+- Persistence is file-based in `apps/api/data/projects` (override with `PRYNT_DATA_DIR`).
 - The prompt engine is deterministic/rule-based in this MVP; easy to replace with an LLM backend using the existing patch contract.
 - Collaboration/CRDT and export pipelines are intentionally deferred until after this single-user MVP.
