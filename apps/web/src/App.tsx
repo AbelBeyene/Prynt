@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import type { AstNode, DocumentAst } from "@prynt/ast";
 import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
+import { Command } from "cmdk";
+import { HexColorPicker } from "react-colorful";
+import { Bot, Frame, MonitorSmartphone, Palette, ScanSearch, Sparkles, StickyNote } from "lucide-react";
 
 const API_URL = "http://localhost:4000";
 const STAGE_WIDTH = 5000;
@@ -9,6 +12,7 @@ const STAGE_HEIGHT = 3200;
 
 type DevicePreset = "iphone" | "android" | "tablet";
 type InspectorMode = "props" | "source" | "patch";
+type ThemeColorTarget = "accent" | "accent2" | "panel" | "canvas";
 
 type CanvasItemType = "phone" | "note" | "frame";
 
@@ -226,6 +230,7 @@ export function App() {
   const [uiAccent2, setUiAccent2] = useState("#60a5fa");
   const [uiPanelTone, setUiPanelTone] = useState("#151b27");
   const [canvasTone, setCanvasTone] = useState("#0e1420");
+  const [themeColorTarget, setThemeColorTarget] = useState<ThemeColorTarget>("accent");
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
   const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
@@ -242,6 +247,7 @@ export function App() {
   const [spacePressed, setSpacePressed] = useState(false);
   const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>("phone-main");
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
@@ -287,6 +293,27 @@ export function App() {
   const visibleLayerIds = useMemo(
     () => (activeDocument ? collectVisibleLayerIds(activeDocument.root, layerSearch) : new Set<string>()),
     [activeDocument, layerSearch]
+  );
+  const activeThemeColor = useMemo(() => {
+    if (themeColorTarget === "accent2") return uiAccent2;
+    if (themeColorTarget === "panel") return uiPanelTone;
+    if (themeColorTarget === "canvas") return canvasTone;
+    return uiAccent;
+  }, [themeColorTarget, uiAccent, uiAccent2, uiPanelTone, canvasTone]);
+  const commandItems = useMemo(
+    () => [
+      { id: "apply", label: "Apply Prompt", icon: Bot, action: () => void handlePrompt() },
+      { id: "simulate", label: "Simulate Prompt", icon: Sparkles, action: () => void handleSimulatePrompt() },
+      { id: "new-screen", label: "Add Screen", icon: MonitorSmartphone, action: () => void addCanvasItem("phone") },
+      { id: "new-note", label: "Add Sticky Note", icon: StickyNote, action: () => void addCanvasItem("note") },
+      { id: "new-frame", label: "Add Frame", icon: Frame, action: () => void addCanvasItem("frame") },
+      { id: "fit-canvas", label: "Fit Canvas", icon: ScanSearch, action: () => fitToViewport() },
+      { id: "theme-teal", label: "Theme: Teal", icon: Palette, action: () => applyThemePreset("teal") },
+      { id: "theme-violet", label: "Theme: Violet", icon: Palette, action: () => applyThemePreset("violet") },
+      { id: "theme-amber", label: "Theme: Amber", icon: Palette, action: () => applyThemePreset("amber") },
+      { id: "theme-mono", label: "Theme: Mono", icon: Palette, action: () => applyThemePreset("mono") }
+    ],
+    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset]
   );
 
   useEffect(() => {
@@ -786,6 +813,22 @@ export function App() {
     setCanvasTone("#10141d");
   }
 
+  function setThemeColor(value: string) {
+    if (themeColorTarget === "accent") {
+      setUiAccent(value);
+      return;
+    }
+    if (themeColorTarget === "accent2") {
+      setUiAccent2(value);
+      return;
+    }
+    if (themeColorTarget === "panel") {
+      setUiPanelTone(value);
+      return;
+    }
+    setCanvasTone(value);
+  }
+
   function handleCanvasBackgroundMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
     if (!(spacePressed || event.button === 1)) return;
     const viewport = viewportRef.current;
@@ -876,6 +919,10 @@ export function App() {
       }
 
       if (event.metaKey || event.ctrlKey) {
+        if (event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          setIsCommandOpen((open) => !open);
+        }
         if (event.key === "Enter") {
           event.preventDefault();
           void handlePrompt();
@@ -922,6 +969,7 @@ export function App() {
           <button type="button" onClick={() => void handleRepair()}>Repair</button>
         </div>
         <div className="workspace-tools-right">
+          <button type="button" onClick={() => setIsCommandOpen(true)}>Command</button>
           <span className="active-target">Target: {activeFile?.name ?? "n/a"}</span>
           <select value={device} onChange={(event) => setDevice(event.target.value as DevicePreset)}>
             <option value="iphone">iPhone (390)</option>
@@ -1104,22 +1152,14 @@ export function App() {
 
           <h3>Design Lab</h3>
           <div className="design-lab">
-            <label className="prop-field">
-              <span className="prop-label">Accent</span>
-              <input type="color" value={uiAccent} onChange={(event) => setUiAccent(event.target.value)} />
-            </label>
-            <label className="prop-field">
-              <span className="prop-label">Accent 2</span>
-              <input type="color" value={uiAccent2} onChange={(event) => setUiAccent2(event.target.value)} />
-            </label>
-            <label className="prop-field">
-              <span className="prop-label">Panel Tone</span>
-              <input type="color" value={uiPanelTone} onChange={(event) => setUiPanelTone(event.target.value)} />
-            </label>
-            <label className="prop-field">
-              <span className="prop-label">Canvas Tone</span>
-              <input type="color" value={canvasTone} onChange={(event) => setCanvasTone(event.target.value)} />
-            </label>
+            <div className="theme-target-tabs">
+              <button type="button" className={themeColorTarget === "accent" ? "tab-active" : ""} onClick={() => setThemeColorTarget("accent")}>Accent</button>
+              <button type="button" className={themeColorTarget === "accent2" ? "tab-active" : ""} onClick={() => setThemeColorTarget("accent2")}>Accent 2</button>
+              <button type="button" className={themeColorTarget === "panel" ? "tab-active" : ""} onClick={() => setThemeColorTarget("panel")}>Panel</button>
+              <button type="button" className={themeColorTarget === "canvas" ? "tab-active" : ""} onClick={() => setThemeColorTarget("canvas")}>Canvas</button>
+            </div>
+            <HexColorPicker color={activeThemeColor} onChange={setThemeColor} />
+            <div className="theme-color-readout">{activeThemeColor.toUpperCase()}</div>
           </div>
           <div className="theme-presets">
             <button type="button" className="btn-soft" onClick={() => applyThemePreset("teal")}>Teal</button>
@@ -1195,6 +1235,31 @@ export function App() {
           {promptWarnings.length > 0 ? promptWarnings.join(" | ") : "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
       </section>
+
+      {isCommandOpen ? (
+        <div className="command-overlay" onClick={() => setIsCommandOpen(false)}>
+          <Command className="command-panel" onClick={(event) => event.stopPropagation()}>
+            <Command.Input autoFocus placeholder="Search commands..." />
+            <Command.List>
+              <Command.Empty>No commands found.</Command.Empty>
+              <Command.Group heading="Actions">
+                {commandItems.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    onSelect={() => {
+                      item.action();
+                      setIsCommandOpen(false);
+                    }}
+                  >
+                    <item.icon size={14} />
+                    <span>{item.label}</span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            </Command.List>
+          </Command>
+        </div>
+      ) : null}
 
       <footer className="footer">Files: {files.length} | Nodes: {flatten(activeDocument.root).length} | Version: {activeDocument.version}</footer>
     </div>
