@@ -76,6 +76,14 @@ npm run typecheck
 npm run build
 ```
 
+## API smoke check
+
+With API running on `http://localhost:4000`:
+
+```bash
+npm run smoke:api
+```
+
 ## API endpoints (MVP)
 
 - `POST /projects`

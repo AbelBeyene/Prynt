@@ -10,6 +10,7 @@
     "dev": "concurrently \"npm run dev --workspace @prynt/api\" \"npm run dev --workspace @prynt/web\"",
     "build": "tsc -b && npm run build --workspace @prynt/web && npm run build --workspace @prynt/api",
     "typecheck": "tsc -b --pretty",
+    "smoke:api": "node scripts/smoke-api.mjs",
     "clean": "rm -rf dist .turbo apps/*/dist packages/*/dist"
   },
   "devDependencies": {
