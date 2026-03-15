@@ -1,4 +1,10 @@
 :root {
+  --topbar-h: 48px;
+  --menu-h: 44px;
+  --footer-h: 24px;
+  --left-panel-w: 280px;
+  --right-panel-w: 280px;
+
   --bg: #0f1116;
   --panel: #171a23;
   --panel-2: #1e2430;
@@ -25,37 +31,49 @@ body {
 }
 
 .app-shell {
-  min-height: 100vh;
-  padding: 16px;
+  height: 100vh;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  overflow: hidden;
 }
 
 .topbar-app {
   background: linear-gradient(120deg, #202a3b, #1a2030 50%, #1f2937);
   color: var(--ink);
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  height: var(--topbar-h);
+  padding: 0 14px;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .topbar-app h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .topbar-app p {
-  margin: 6px 0 0;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
   color: var(--ink-dim);
 }
 
 .prompt-row {
   display: grid;
-  grid-template-columns: 1fr repeat(5, auto);
+  grid-template-columns: 1fr repeat(5, minmax(70px, auto));
   gap: 8px;
+  align-items: center;
+  height: var(--menu-h);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: #141924;
 }
 
 .prompt-row input,
@@ -63,42 +81,68 @@ body {
 .prompt-row select,
 .inspector-panel input,
 .versions button,
-.layer-item button {
+.layer-item button,
+.mode-tabs button,
+.canvas-controls button {
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 5px 9px;
   font: inherit;
   color: var(--ink);
   background: var(--panel-2);
+  height: 30px;
+  font-size: 12px;
 }
 
 .prompt-row button,
 .versions button,
-.layer-item button {
+.layer-item button,
+.mode-tabs button,
+.canvas-controls button {
   cursor: pointer;
 }
 
 .prompt-row button:hover,
 .versions button:hover,
-.layer-item button:hover {
+.layer-item button:hover,
+.mode-tabs button:hover,
+.canvas-controls button:hover {
   border-color: var(--accent-2);
   box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22) inset;
 }
 
 .layout-grid {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
-  gap: 12px;
-  min-height: 70vh;
+  grid-template-columns: var(--left-panel-w) 1fr var(--right-panel-w);
+  gap: 0;
+  height: calc(100vh - var(--topbar-h) - var(--menu-h) - var(--footer-h));
 }
 
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 0;
+  padding: 10px;
   overflow: auto;
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
+}
+
+.layer-panel {
+  border-right: 1px solid var(--border);
+}
+
+.canvas-panel {
+  border-left: 0;
+  border-right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.inspector-panel {
+  border-left: 1px solid var(--border);
 }
 
 .layer-children {
@@ -112,23 +156,17 @@ body {
   background: #1d2a3f !important;
 }
 
-.canvas-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  overflow: hidden;
-}
-
 .canvas-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .canvas-toolbar h2 {
   margin: 0;
+  font-size: 13px;
 }
 
 .canvas-controls {
@@ -137,17 +175,16 @@ body {
   gap: 6px;
 }
 
-.canvas-controls button {
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  border-radius: 8px;
-  padding: 6px 8px;
-  color: var(--ink);
+.canvas-controls span {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 42px;
+  text-align: center;
 }
 
 .canvas-viewport {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background-image:
     linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
@@ -156,7 +193,7 @@ body {
     #0f131d;
   background-size: 24px 24px;
   overflow: auto;
-  height: 720px;
+  height: 100%;
   cursor: default;
 }
 
@@ -220,8 +257,8 @@ body {
 }
 
 .canvas-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
+  margin: 6px 0 0;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -316,41 +353,33 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-size: 12px;
 }
 
 .inspector-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 
 .mode-tabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
-  margin-bottom: 10px;
-}
-
-.mode-tabs button {
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  border-radius: 8px;
-  padding: 8px;
-  color: var(--ink);
+  margin-bottom: 8px;
 }
 
 .source-box {
   width: 100%;
-  min-height: 140px;
+  min-height: 132px;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   background: #101521;
   color: #d8e2ff;
 }
@@ -363,7 +392,13 @@ body {
 
 .footer {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 11px;
+  height: var(--footer-h);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  background: #141924;
 }
 
 .loading {
@@ -375,10 +410,12 @@ body {
 @media (max-width: 1100px) {
   .layout-grid {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .prompt-row {
     grid-template-columns: 1fr 1fr;
+    height: auto;
   }
 
   .canvas-toolbar {
