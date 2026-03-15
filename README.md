@@ -47,6 +47,20 @@ npm run dev
 - Web: `http://localhost:5173`
 - API health: `http://localhost:4000/health`
 
+### Testing with local AI keys from another project
+
+The API will automatically try loading env values from:
+- `/Users/abel/Documents/Projects/Adaptmycv/.env.local`
+
+Supported vars:
+- `OPENROUTER_API_KEY` or `VITE_OPENROUTER_API_KEY`
+- `OPENROUTER_API_URL` or `VITE_OPENROUTER_API_URL`
+- `OPENROUTER_MODEL` or `VITE_OPENROUTER_MODEL`
+
+Optional:
+- `PRYNT_AI_ENV_PATH` to override env file path
+- `PRYNT_AI_DEBUG=1` to log when rule fallback is used
+
 ## Build and typecheck
 
 ```bash

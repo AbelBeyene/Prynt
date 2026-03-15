@@ -1,6 +1,28 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import cors from "cors";
+import dotenv from "dotenv";
 import express from "express";
 import { buildStubInitialDocument, EditorApiService } from "./index.js";
+
+function loadLocalAiEnv(): void {
+  const candidates = [
+    process.env.PRYNT_AI_ENV_PATH,
+    "/Users/abel/Documents/Projects/Adaptmycv/.env.local",
+    path.resolve(process.cwd(), "../Adaptmycv/.env.local"),
+    path.resolve(process.cwd(), "../../Adaptmycv/.env.local")
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const envPath of candidates) {
+    if (!existsSync(envPath)) {
+      continue;
+    }
+    dotenv.config({ path: envPath, override: false });
+    break;
+  }
+}
+
+loadLocalAiEnv();
 
 const app = express();
 const api = new EditorApiService();
@@ -71,9 +93,9 @@ app.post("/projects/:projectId/patch/preview", (req, res) => {
   }
 });
 
-app.post("/projects/:projectId/prompt", (req, res) => {
+app.post("/projects/:projectId/prompt", async (req, res) => {
   try {
-    const response = api.generateFromPrompt(req.params.projectId, req.body);
+    const response = await api.generateFromPrompt(req.params.projectId, req.body);
     res.json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });

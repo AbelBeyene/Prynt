@@ -4,6 +4,7 @@ import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
 import { buildRepairPlan } from "@prynt/repair";
 import { suggestRepairs, validateDocument } from "@prynt/validator";
+import { canUseLlm, generatePatchesFromLlm } from "./ai.js";
 
 export interface VersionSnapshot {
   id: number;
@@ -60,6 +61,7 @@ export interface GenerateFromPromptRequest {
 export interface PromptResult {
   prompt: string;
   fileId: string;
+  source: "llm" | "rule";
   patches: PatchOp[];
   response: ApplyPatchResponse;
 }
@@ -276,13 +278,35 @@ export class EditorApiService {
     };
   }
 
-  generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): PromptResult {
+  async generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptResult> {
     const { file } = this.resolveFile(projectId, request.fileId);
+    if (canUseLlm()) {
+      try {
+        const llmPatches = await generatePatchesFromLlm(request.prompt, file.document, request.selectedNodeId);
+        const llmResponse = this.applyPatch(projectId, { fileId: file.fileId, patches: llmPatches, reason: `Prompt: ${request.prompt}` });
+        if (llmResponse.applied) {
+          return {
+            prompt: request.prompt,
+            fileId: file.fileId,
+            source: "llm",
+            patches: llmPatches,
+            response: llmResponse
+          };
+        }
+      } catch {
+        if (process.env.PRYNT_AI_DEBUG === "1") {
+          console.warn("LLM prompt generation failed, using rule fallback.");
+        }
+        // Fall through to deterministic rule-based patch generation.
+      }
+    }
+
     const patches = buildPatchesFromPrompt(file.document, request.prompt, request.selectedNodeId);
     const response = this.applyPatch(projectId, { fileId: file.fileId, patches, reason: `Prompt: ${request.prompt}` });
     return {
       prompt: request.prompt,
       fileId: file.fileId,
+      source: "rule",
       patches,
       response
     };
