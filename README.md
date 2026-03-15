@@ -5,13 +5,15 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 ## What is implemented
 
 - Prompt-native editing with deterministic patch operations.
+- Intent-aware prompt parsing with confidence and warnings.
 - Multi-modal editing paths:
   - Prompt bar
   - Layer tree selection
   - Property inspector edits
   - Source inspection (JSON AST + DSL)
-  - Patch console (preview + apply)
+- Patch console (preview + apply)
 - Validation and repair pipeline before apply.
+- Prompt simulation preview across one or many screens.
 - Version history with restore.
 - Undo/redo.
 - Mobile device previews: iPhone (390), Android (360), Tablet (768).
@@ -73,6 +75,8 @@ npm run build
 - `POST /projects`
 - `GET /projects/:projectId`
 - `POST /projects/:projectId/prompt`
+- `POST /projects/:projectId/intent`
+- `POST /projects/:projectId/prompt/simulate`
 - `POST /projects/:projectId/patch`
 - `POST /projects/:projectId/patch/preview`
 - `POST /projects/:projectId/undo`

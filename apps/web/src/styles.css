@@ -67,13 +67,25 @@ body {
 
 .prompt-row {
   display: grid;
-  grid-template-columns: 1fr repeat(5, minmax(70px, auto));
+  grid-template-columns: 1fr repeat(6, minmax(70px, auto));
   gap: 8px;
   align-items: center;
   height: var(--menu-h);
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: #141924;
+}
+
+.prompt-meta {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: #111620;
 }
 
 .prompt-row input,
@@ -115,7 +127,7 @@ body {
   display: grid;
   grid-template-columns: var(--left-panel-w) 1fr var(--right-panel-w);
   gap: 0;
-  height: calc(100vh - var(--topbar-h) - var(--menu-h) - var(--footer-h));
+  height: calc(100vh - var(--topbar-h) - var(--menu-h) - 22px - var(--footer-h));
 }
 
 .panel {

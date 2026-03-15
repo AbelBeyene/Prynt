@@ -102,6 +102,24 @@ app.post("/projects/:projectId/prompt", async (req, res) => {
   }
 });
 
+app.post("/projects/:projectId/prompt/simulate", async (req, res) => {
+  try {
+    const response = await api.simulatePrompt(req.params.projectId, req.body);
+    res.json(response);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/projects/:projectId/intent", (req, res) => {
+  try {
+    const intent = api.parseIntent(req.params.projectId, String(req.body?.prompt ?? ""), req.body?.fileId);
+    res.json(intent);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
 app.post("/projects/:projectId/undo", (req, res) => {
   try {
     const response = api.undo(req.params.projectId, req.body?.fileId);

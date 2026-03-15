@@ -35,6 +35,15 @@ interface VersionSnapshot {
   createdAt: string;
 }
 
+interface IntentSpec {
+  prompt: string;
+  action: "add" | "update" | "replace" | "remove" | "style" | "unknown";
+  targetMode: "single" | "multiple";
+  targetFileIds: string[];
+  confidence: number;
+  warnings: string[];
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -150,8 +159,11 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
   const [isApplyingPrompt, setIsApplyingPrompt] = useState(false);
+  const [isSimulatingPrompt, setIsSimulatingPrompt] = useState(false);
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
+  const [promptConfidence, setPromptConfidence] = useState<number | null>(null);
+  const [promptWarnings, setPromptWarnings] = useState<string[]>([]);
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
@@ -319,12 +331,20 @@ export function App() {
     setIsApplyingPrompt(true);
     setStatus("Applying prompt...");
     try {
-      const response = await apiRequest<{ fileName: string; source: "llm" | "rule"; response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] } }>(`/projects/${projectId}/prompt`, {
+      const response = await apiRequest<{
+        intent: IntentSpec;
+        source: "llm" | "rule" | "mixed";
+        fileName: string;
+        response: { fileId: string; document: DocumentAst; applied: boolean; repairSuggestions: string[] };
+        results: Array<{ fileId: string; fileName: string; response: { document: DocumentAst; applied: boolean } }>;
+      }>(`/projects/${projectId}/prompt`, {
         method: "POST",
         body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
       });
 
-      patchFileDocument(response.response.fileId, response.response.document);
+      for (const result of response.results) {
+        patchFileDocument(result.fileId, result.response.document);
+      }
       if (response.response.fileId !== activeFileId) {
         const targetPhone = canvasItems.find((item) => item.type === "phone" && item.fileId === response.response.fileId);
         if (targetPhone) {
@@ -332,9 +352,11 @@ export function App() {
         }
       }
       setPreviewDocument(null);
+      setPromptConfidence(response.intent.confidence);
+      setPromptWarnings(response.intent.warnings);
       setStatus(
         response.response.applied
-          ? `Prompt applied on ${response.fileName} (${response.source})`
+          ? `Prompt applied on ${response.results.length} screen(s) (${response.source})`
           : response.response.repairSuggestions.join(" | ")
       );
       await refreshVersions(projectId, response.response.fileId);
@@ -342,6 +364,40 @@ export function App() {
       setStatus(`Prompt failed: ${(error as Error).message}`);
     } finally {
       setIsApplyingPrompt(false);
+    }
+  }
+
+  async function handleSimulatePrompt() {
+    if (!projectId || !activeFileId) {
+      setStatus("No active screen selected.");
+      return;
+    }
+
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      setStatus("Type a prompt before simulating.");
+      return;
+    }
+
+    setIsSimulatingPrompt(true);
+    setStatus("Simulating prompt...");
+    try {
+      const response = await apiRequest<{
+        intent: IntentSpec;
+        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { applied: boolean; warnings: string[] } }>;
+      }>(`/projects/${projectId}/prompt/simulate`, {
+        method: "POST",
+        body: JSON.stringify({ fileId: activeFileId, prompt: trimmedPrompt, selectedNodeId: selectedId ?? undefined })
+      });
+
+      setPromptConfidence(response.intent.confidence);
+      setPromptWarnings(response.intent.warnings);
+      const okCount = response.results.filter((result) => result.response.applied).length;
+      setStatus(`Simulation ready: ${okCount}/${response.results.length} screen(s) valid`);
+    } catch (error) {
+      setStatus(`Simulation failed: ${(error as Error).message}`);
+    } finally {
+      setIsSimulatingPrompt(false);
     }
   }
 
@@ -530,6 +586,9 @@ export function App() {
         <button type="button" onClick={() => void handlePrompt()} disabled={isApplyingPrompt}>
           {isApplyingPrompt ? "Applying..." : "Apply Prompt"}
         </button>
+        <button type="button" onClick={() => void handleSimulatePrompt()} disabled={isSimulatingPrompt}>
+          {isSimulatingPrompt ? "Simulating..." : "Simulate"}
+        </button>
         <button type="button" onClick={() => void handleRepair()}>Repair</button>
         <button type="button" onClick={() => void handleUndo()}>Undo</button>
         <button type="button" onClick={() => void handleRedo()}>Redo</button>
@@ -538,6 +597,10 @@ export function App() {
           <option value="android">Android (360)</option>
           <option value="tablet">Tablet (768)</option>
         </select>
+      </section>
+      <section className="prompt-meta">
+        <span>Confidence: {promptConfidence !== null ? `${Math.round(promptConfidence * 100)}%` : "n/a"}</span>
+        <span>{promptWarnings.length > 0 ? promptWarnings.join(" | ") : "No intent warnings"}</span>
       </section>
 
       <main className="layout-grid">

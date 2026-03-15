@@ -34,6 +34,15 @@ export interface ProjectState {
   fileOrder: string[];
 }
 
+export interface IntentSpec {
+  prompt: string;
+  action: "add" | "update" | "replace" | "remove" | "style" | "unknown";
+  targetMode: "single" | "multiple";
+  targetFileIds: string[];
+  confidence: number;
+  warnings: string[];
+}
+
 export interface ApplyPatchRequest {
   fileId?: string;
   patches: PatchOp[];
@@ -46,6 +55,9 @@ export interface ApplyPatchResponse {
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
   repairSuggestions: string[];
+  confidence: number;
+  warnings: string[];
+  autoRepaired: boolean;
 }
 
 export interface PreviewPatchResponse extends ApplyPatchResponse {
@@ -58,13 +70,29 @@ export interface GenerateFromPromptRequest {
   selectedNodeId?: string;
 }
 
-export interface PromptResult {
-  prompt: string;
+export interface PromptTargetResult {
   fileId: string;
   fileName: string;
   source: "llm" | "rule";
   patches: PatchOp[];
   response: ApplyPatchResponse;
+}
+
+export interface PromptResult {
+  prompt: string;
+  intent: IntentSpec;
+  fileId: string;
+  fileName: string;
+  source: "llm" | "rule" | "mixed";
+  patches: PatchOp[];
+  response: ApplyPatchResponse;
+  results: PromptTargetResult[];
+}
+
+export interface PromptSimulationResult {
+  prompt: string;
+  intent: IntentSpec;
+  results: PromptTargetResult[];
 }
 
 export interface ValidateRequest {
@@ -81,6 +109,9 @@ export interface RepairApplyResponse {
   generatedPatches: PatchOp[];
   document: DocumentAst;
   validationIssues: ReturnType<typeof validateDocument>["issues"];
+  confidence: number;
+  warnings: string[];
+  autoRepaired: boolean;
 }
 
 export interface CreateFileRequest {
@@ -130,13 +161,14 @@ export class EditorApiService {
     if (!baseFileId) {
       throw new Error("Project has no base file to clone.");
     }
+
     const base = this.requireFile(project, baseFileId);
     const fileId = `file-${project.fileOrder.length + 1}`;
-
     const cloned = cloneDocument(base.document);
     cloned.docId = fileId;
     cloned.version = 1;
     cloned.root = reIdTree(cloned.root, fileId);
+
     if (typeof cloned.root.props.title === "string") {
       cloned.root.props.title = `${cloned.root.props.title} Copy`;
     }
@@ -173,7 +205,10 @@ export class EditorApiService {
       fileId: file.fileId,
       document: file.document,
       validationIssues: [],
-      repairSuggestions: []
+      repairSuggestions: [],
+      confidence: 1,
+      warnings: [],
+      autoRepaired: false
     };
   }
 
@@ -186,7 +221,10 @@ export class EditorApiService {
         fileId: file.fileId,
         document: file.document,
         validationIssues: [],
-        repairSuggestions: ["Nothing to undo."]
+        repairSuggestions: ["Nothing to undo."],
+        confidence: 1,
+        warnings: ["Nothing to undo."],
+        autoRepaired: false
       };
     }
 
@@ -198,7 +236,10 @@ export class EditorApiService {
       fileId: file.fileId,
       document: file.document,
       validationIssues: [],
-      repairSuggestions: []
+      repairSuggestions: [],
+      confidence: 1,
+      warnings: [],
+      autoRepaired: false
     };
   }
 
@@ -211,7 +252,10 @@ export class EditorApiService {
         fileId: file.fileId,
         document: file.document,
         validationIssues: [],
-        repairSuggestions: ["Nothing to redo."]
+        repairSuggestions: ["Nothing to redo."],
+        confidence: 1,
+        warnings: ["Nothing to redo."],
+        autoRepaired: false
       };
     }
 
@@ -223,96 +267,77 @@ export class EditorApiService {
       fileId: file.fileId,
       document: file.document,
       validationIssues: [],
-      repairSuggestions: []
+      repairSuggestions: [],
+      confidence: 1,
+      warnings: [],
+      autoRepaired: false
     };
   }
 
   applyPatch(projectId: string, request: ApplyPatchRequest): ApplyPatchResponse {
     const { file } = this.resolveFile(projectId, request.fileId);
-    const result = runEditPipeline(file.document, request.patches);
-
-    if (!result.applied) {
-      return {
-        applied: false,
-        fileId: file.fileId,
-        document: file.document,
-        validationIssues: result.validation.issues,
-        repairSuggestions: result.repairSuggestions
-      };
-    }
-
-    file.undoStack.push(cloneDocument(file.document));
-    file.redoStack = [];
-
-    file.document = {
-      ...result.document,
-      version: file.document.version + 1
-    };
-    file.patchHistory.push(request.patches);
-
-    file.versions.push({
-      id: file.versions.length + 1,
-      reason: request.reason ?? "Edit",
-      createdAt: new Date().toISOString(),
-      document: cloneDocument(file.document)
-    });
-
-    return {
-      applied: true,
-      fileId: file.fileId,
-      document: file.document,
-      validationIssues: [],
-      repairSuggestions: []
-    };
+    return this.applyWithAutoRepair(file, request.patches, request.reason ?? "Edit", true);
   }
 
   previewPatch(projectId: string, request: ApplyPatchRequest): PreviewPatchResponse {
     const { file } = this.resolveFile(projectId, request.fileId);
-    const result = runEditPipeline(file.document, request.patches);
+    const response = this.applyWithAutoRepair(file, request.patches, request.reason ?? "Preview", false);
     return {
-      applied: result.applied,
-      fileId: file.fileId,
-      document: result.document,
-      validationIssues: result.validation.issues,
-      repairSuggestions: result.repairSuggestions,
+      ...response,
       patches: request.patches
+    };
+  }
+
+  parseIntent(projectId: string, prompt: string, fileId?: string): IntentSpec {
+    const { project, file } = this.resolveFile(projectId, fileId);
+    return this.buildIntentSpec(project, prompt, file);
+  }
+
+  async simulatePrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptSimulationResult> {
+    const { project, file: initialFile } = this.resolveFile(projectId, request.fileId);
+    const intent = this.buildIntentSpec(project, request.prompt, initialFile);
+
+    const results: PromptTargetResult[] = [];
+    for (const targetFileId of intent.targetFileIds) {
+      const target = this.requireFile(project, targetFileId);
+      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, false);
+      results.push(generated);
+    }
+
+    return {
+      prompt: request.prompt,
+      intent,
+      results
     };
   }
 
   async generateFromPrompt(projectId: string, request: GenerateFromPromptRequest): Promise<PromptResult> {
     const { project, file: initialFile } = this.resolveFile(projectId, request.fileId);
-    const file = this.resolvePromptTargetFile(project, request.prompt, initialFile);
-    if (canUseLlm()) {
-      try {
-        const llmPatches = await generatePatchesFromLlm(request.prompt, file.document, request.selectedNodeId);
-        const llmResponse = this.applyPatch(projectId, { fileId: file.fileId, patches: llmPatches, reason: `Prompt: ${request.prompt}` });
-        if (llmResponse.applied) {
-          return {
-            prompt: request.prompt,
-            fileId: file.fileId,
-            fileName: file.name,
-            source: "llm",
-            patches: llmPatches,
-            response: llmResponse
-          };
-        }
-      } catch {
-        if (process.env.PRYNT_AI_DEBUG === "1") {
-          console.warn("LLM prompt generation failed, using rule fallback.");
-        }
-        // Fall through to deterministic rule-based patch generation.
-      }
+    const intent = this.buildIntentSpec(project, request.prompt, initialFile);
+
+    const results: PromptTargetResult[] = [];
+    for (const targetFileId of intent.targetFileIds) {
+      const target = this.requireFile(project, targetFileId);
+      const generated = await this.generatePatchesForFile(projectId, target, request.prompt, request.selectedNodeId, true);
+      results.push(generated);
     }
 
-    const patches = buildPatchesFromPrompt(file.document, request.prompt, request.selectedNodeId);
-    const response = this.applyPatch(projectId, { fileId: file.fileId, patches, reason: `Prompt: ${request.prompt}` });
+    const primary = results[0];
+    if (!primary) {
+      throw new Error("No target files resolved for prompt.");
+    }
+
+    const source = results.every((result) => result.source === primary.source) ? primary.source : "mixed";
+
     return {
       prompt: request.prompt,
-      fileId: file.fileId,
-      fileName: file.name,
-      source: "rule",
-      patches,
-      response
+      intent,
+      fileId: primary.fileId,
+      fileName: primary.fileName,
+      source,
+      patches: primary.patches,
+      response: primary.response,
+      results
     };
   }
 
@@ -342,18 +367,23 @@ export class EditorApiService {
         fileId: file.fileId,
         generatedPatches: [],
         document: file.document,
-        validationIssues: validation.issues
+        validationIssues: validation.issues,
+        confidence: 1,
+        warnings: ["No repair patches generated."],
+        autoRepaired: false
       };
     }
 
-    const result = this.applyPatch(projectId, { fileId: file.fileId, patches: plan.patches, reason: "Auto repair" });
-
+    const response = this.applyWithAutoRepair(file, plan.patches, "Auto repair", true);
     return {
-      applied: result.applied,
-      fileId: file.fileId,
+      applied: response.applied,
+      fileId: response.fileId,
       generatedPatches: plan.patches,
-      document: result.document,
-      validationIssues: result.validationIssues
+      document: response.document,
+      validationIssues: response.validationIssues,
+      confidence: response.confidence,
+      warnings: response.warnings,
+      autoRepaired: response.autoRepaired
     };
   }
 
@@ -372,34 +402,206 @@ export class EditorApiService {
     return { project, file };
   }
 
-  private resolvePromptTargetFile(project: ProjectState, prompt: string, fallback: FileState): FileState {
+  private buildIntentSpec(project: ProjectState, prompt: string, fallback: FileState): IntentSpec {
     const lower = prompt.toLowerCase();
+    const targetFileIds = new Set<string>();
+    const warnings: string[] = [];
 
-    const fileIdMatch = lower.match(/\bfile-(\d+)\b/);
-    if (fileIdMatch?.[0]) {
-      const byId = project.files.get(fileIdMatch[0]);
-      if (byId) {
-        return byId;
+    const allScreens = /\b(all screens|all artboards|every screen|all files)\b/.test(lower);
+    if (allScreens) {
+      for (const fileId of project.fileOrder) {
+        targetFileIds.add(fileId);
       }
     }
 
-    const screenNumberMatch = lower.match(/\bscreen\s+(\d+)\b/);
-    if (screenNumberMatch?.[1]) {
-      const candidateId = `file-${screenNumberMatch[1]}`;
-      const byScreenNumber = project.files.get(candidateId);
-      if (byScreenNumber) {
-        return byScreenNumber;
+    const fileIdMatches = lower.match(/\bfile-(\d+)\b/g) ?? [];
+    for (const match of fileIdMatches) {
+      if (project.files.has(match)) {
+        targetFileIds.add(match);
+      }
+    }
+
+    const screenMatches = [...lower.matchAll(/\bscreen\s+(\d+)\b/g)];
+    for (const match of screenMatches) {
+      const id = `file-${match[1]}`;
+      if (project.files.has(id)) {
+        targetFileIds.add(id);
       }
     }
 
     for (const fileId of project.fileOrder) {
       const file = this.requireFile(project, fileId);
       if (lower.includes(file.name.toLowerCase())) {
-        return file;
+        targetFileIds.add(file.fileId);
       }
     }
 
-    return fallback;
+    if (targetFileIds.size === 0) {
+      targetFileIds.add(fallback.fileId);
+    }
+
+    if (targetFileIds.size > 1 && !allScreens && fileIdMatches.length === 0 && screenMatches.length === 0) {
+      warnings.push("Prompt matched multiple screens by name. Confirm target if this was unintentional.");
+    }
+
+    let action: IntentSpec["action"] = "unknown";
+    if (/(\badd\b|\binsert\b|\bcreate\b)/.test(lower)) action = "add";
+    if (/(\bupdate\b|\bchange\b|\bmodify\b)/.test(lower)) action = "update";
+    if (/\breplace\b/.test(lower)) action = "replace";
+    if (/(\bremove\b|\bdelete\b)/.test(lower)) action = "remove";
+    if (/(\brestyle\b|\bpolish\b|\bpremium\b|\bmodern\b)/.test(lower)) action = "style";
+
+    let confidence = 0.6;
+    if (allScreens || fileIdMatches.length > 0 || screenMatches.length > 0) confidence += 0.2;
+    if (action !== "unknown") confidence += 0.1;
+    if (warnings.length > 0) confidence -= 0.15;
+    confidence = Math.max(0.1, Math.min(0.98, confidence));
+
+    return {
+      prompt,
+      action,
+      targetMode: targetFileIds.size > 1 ? "multiple" : "single",
+      targetFileIds: [...targetFileIds],
+      confidence,
+      warnings
+    };
+  }
+
+  private async generatePatchesForFile(
+    projectId: string,
+    file: FileState,
+    prompt: string,
+    selectedNodeId: string | undefined,
+    commit: boolean
+  ): Promise<PromptTargetResult> {
+    if (canUseLlm()) {
+      try {
+        const llmPatches = await generatePatchesFromLlm(prompt, file.document, selectedNodeId);
+        const llmResponse = this.applyWithAutoRepair(file, llmPatches, `Prompt: ${prompt}`, commit);
+        if (llmResponse.applied) {
+          return {
+            fileId: file.fileId,
+            fileName: file.name,
+            source: "llm",
+            patches: llmPatches,
+            response: llmResponse
+          };
+        }
+      } catch {
+        if (process.env.PRYNT_AI_DEBUG === "1") {
+          console.warn("LLM prompt generation failed, using rule fallback.");
+        }
+      }
+    }
+
+    const rulePatches = buildPatchesFromPrompt(file.document, prompt, selectedNodeId);
+    const ruleResponse = this.applyWithAutoRepair(file, rulePatches, `Prompt: ${prompt}`, commit);
+    return {
+      fileId: file.fileId,
+      fileName: file.name,
+      source: "rule",
+      patches: rulePatches,
+      response: ruleResponse
+    };
+  }
+
+  private applyWithAutoRepair(file: FileState, patches: PatchOp[], reason: string, commit: boolean): ApplyPatchResponse {
+    let result;
+    try {
+      result = runEditPipeline(file.document, patches);
+    } catch (error) {
+      return {
+        applied: false,
+        fileId: file.fileId,
+        document: file.document,
+        validationIssues: [],
+        repairSuggestions: [String((error as Error).message)],
+        confidence: 0.2,
+        warnings: ["Patch application failed before validation."],
+        autoRepaired: false
+      };
+    }
+
+    if (result.applied) {
+      const nextDocument = {
+        ...result.document,
+        version: commit ? file.document.version + 1 : file.document.version
+      };
+
+      if (commit) {
+        file.undoStack.push(cloneDocument(file.document));
+        file.redoStack = [];
+        file.document = nextDocument;
+        file.patchHistory.push(patches);
+        file.versions.push({
+          id: file.versions.length + 1,
+          reason,
+          createdAt: new Date().toISOString(),
+          document: cloneDocument(file.document)
+        });
+      }
+
+      return {
+        applied: true,
+        fileId: file.fileId,
+        document: nextDocument,
+        validationIssues: [],
+        repairSuggestions: [],
+        confidence: scoreConfidence(patches.length, false, true),
+        warnings: [],
+        autoRepaired: false
+      };
+    }
+
+    const repairPlan = buildRepairPlan(result.document);
+    if (repairPlan.patches.length > 0) {
+      try {
+        const repaired = runEditPipeline(result.document, repairPlan.patches);
+        if (repaired.applied) {
+          const nextDocument = {
+            ...repaired.document,
+            version: commit ? file.document.version + 1 : file.document.version
+          };
+
+          if (commit) {
+            file.undoStack.push(cloneDocument(file.document));
+            file.redoStack = [];
+            file.document = nextDocument;
+            file.patchHistory.push([...patches, ...repairPlan.patches]);
+            file.versions.push({
+              id: file.versions.length + 1,
+              reason: `${reason} (auto-repaired)`,
+              createdAt: new Date().toISOString(),
+              document: cloneDocument(file.document)
+            });
+          }
+
+          return {
+            applied: true,
+            fileId: file.fileId,
+            document: nextDocument,
+            validationIssues: [],
+            repairSuggestions: [],
+            confidence: scoreConfidence(patches.length + repairPlan.patches.length, true, true),
+            warnings: ["Invalid patch auto-repaired before apply."],
+            autoRepaired: true
+          };
+        }
+      } catch {
+        // continue to final failed response
+      }
+    }
+
+    return {
+      applied: false,
+      fileId: file.fileId,
+      document: file.document,
+      validationIssues: result.validation.issues,
+      repairSuggestions: result.repairSuggestions,
+      confidence: scoreConfidence(patches.length, false, false),
+      warnings: ["Patch failed validation and could not be repaired."],
+      autoRepaired: false
+    };
   }
 
   private requireProject(projectId: string): ProjectState {
@@ -417,6 +619,17 @@ export class EditorApiService {
     }
     return file;
   }
+}
+
+function scoreConfidence(patchCount: number, autoRepaired: boolean, valid: boolean): number {
+  if (!valid) {
+    return 0.25;
+  }
+  let score = 0.92;
+  if (patchCount > 4) score -= 0.12;
+  if (patchCount > 8) score -= 0.15;
+  if (autoRepaired) score -= 0.2;
+  return Math.max(0.3, Math.min(0.99, score));
 }
 
 function createFileState(fileId: string, name: string, document: DocumentAst): FileState {
