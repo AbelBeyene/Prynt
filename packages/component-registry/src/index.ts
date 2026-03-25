@@ -307,6 +307,244 @@ export const componentDefinitions: Record<string, ComponentDefinition> = {
     props: { title: { type: "string" } },
     defaults: { title: "Form" },
     mobileCategory: "input"
+  },
+  AppBar: {
+    name: "AppBar",
+    allowedChildren: anyChildren,
+    props: { title: { type: "string", required: true }, variant: { type: "string" } },
+    defaults: { title: "Title", variant: "standard" },
+    mobileCategory: "navigation"
+  },
+  SegmentedControl: {
+    name: "SegmentedControl",
+    allowedChildren: [],
+    props: { options: { type: "string" }, selected: { type: "number" } },
+    defaults: { options: "Overview|Activity|Settings", selected: 0 },
+    mobileCategory: "navigation"
+  },
+  NavigationRail: {
+    name: "NavigationRail",
+    allowedChildren: anyChildren,
+    props: { items: { type: "number" } },
+    defaults: { items: 4 },
+    mobileCategory: "navigation"
+  },
+  Drawer: {
+    name: "Drawer",
+    allowedChildren: anyChildren,
+    props: { open: { type: "boolean" }, side: { type: "string" } },
+    defaults: { open: false, side: "left" },
+    mobileCategory: "navigation"
+  },
+  Breadcrumb: {
+    name: "Breadcrumb",
+    allowedChildren: [],
+    props: { items: { type: "string" } },
+    defaults: { items: "Home|Section|Page" },
+    mobileCategory: "navigation"
+  },
+  Stepper: {
+    name: "Stepper",
+    allowedChildren: [],
+    props: { steps: { type: "number" }, current: { type: "number" } },
+    defaults: { steps: 4, current: 1 },
+    mobileCategory: "navigation"
+  },
+  PaginationDots: {
+    name: "PaginationDots",
+    allowedChildren: [],
+    props: { count: { type: "number" }, active: { type: "number" } },
+    defaults: { count: 3, active: 1 },
+    mobileCategory: "navigation"
+  },
+  PasswordField: {
+    name: "PasswordField",
+    allowedChildren: [],
+    props: { label: { type: "string", required: true }, placeholder: { type: "string" }, minHeight: { type: "number" } },
+    defaults: { label: "Password", placeholder: "••••••••", minHeight: 44 },
+    mobileCategory: "input"
+  },
+  OTPInput: {
+    name: "OTPInput",
+    allowedChildren: [],
+    props: { length: { type: "number" } },
+    defaults: { length: 6 },
+    mobileCategory: "input"
+  },
+  Slider: {
+    name: "Slider",
+    allowedChildren: [],
+    props: { min: { type: "number" }, max: { type: "number" }, value: { type: "number" } },
+    defaults: { min: 0, max: 100, value: 50 },
+    mobileCategory: "input"
+  },
+  DatePicker: {
+    name: "DatePicker",
+    allowedChildren: [],
+    props: { label: { type: "string" }, value: { type: "string" } },
+    defaults: { label: "Date", value: "2026-03-25" },
+    mobileCategory: "input"
+  },
+  TimePicker: {
+    name: "TimePicker",
+    allowedChildren: [],
+    props: { label: { type: "string" }, value: { type: "string" } },
+    defaults: { label: "Time", value: "09:00" },
+    mobileCategory: "input"
+  },
+  FilePicker: {
+    name: "FilePicker",
+    allowedChildren: [],
+    props: { label: { type: "string" }, accept: { type: "string" } },
+    defaults: { label: "Upload file", accept: "image/*" },
+    mobileCategory: "input"
+  },
+  AlertBanner: {
+    name: "AlertBanner",
+    allowedChildren: [],
+    props: { text: { type: "string", required: true }, tone: { type: "string", tokenType: "colorRole" } },
+    defaults: { text: "Heads up", tone: "accent" },
+    mobileCategory: "content"
+  },
+  Snackbar: {
+    name: "Snackbar",
+    allowedChildren: [],
+    props: { text: { type: "string", required: true }, action: { type: "string" } },
+    defaults: { text: "Changes saved", action: "Undo" },
+    mobileCategory: "content"
+  },
+  Toast: {
+    name: "Toast",
+    allowedChildren: [],
+    props: { text: { type: "string", required: true } },
+    defaults: { text: "Done" },
+    mobileCategory: "content"
+  },
+  ProgressBar: {
+    name: "ProgressBar",
+    allowedChildren: [],
+    props: { value: { type: "number" } },
+    defaults: { value: 45 },
+    mobileCategory: "content"
+  },
+  CircularProgress: {
+    name: "CircularProgress",
+    allowedChildren: [],
+    props: { value: { type: "number" } },
+    defaults: { value: 60 },
+    mobileCategory: "content"
+  },
+  Skeleton: {
+    name: "Skeleton",
+    allowedChildren: [],
+    props: { lines: { type: "number" } },
+    defaults: { lines: 3 },
+    mobileCategory: "content"
+  },
+  EmptyState: {
+    name: "EmptyState",
+    allowedChildren: anyChildren,
+    props: { title: { type: "string" }, description: { type: "string" } },
+    defaults: { title: "No results", description: "Try a different filter." },
+    mobileCategory: "content"
+  },
+  Chip: {
+    name: "Chip",
+    allowedChildren: [],
+    props: { text: { type: "string", required: true }, tone: { type: "string", tokenType: "colorRole" } },
+    defaults: { text: "Chip", tone: "surface" },
+    mobileCategory: "content"
+  },
+  Carousel: {
+    name: "Carousel",
+    allowedChildren: anyChildren,
+    props: { slides: { type: "number" } },
+    defaults: { slides: 3 },
+    mobileCategory: "content"
+  },
+  Timeline: {
+    name: "Timeline",
+    allowedChildren: anyChildren,
+    props: { items: { type: "number" } },
+    defaults: { items: 4 },
+    mobileCategory: "content"
+  },
+  BottomSheet: {
+    name: "BottomSheet",
+    allowedChildren: anyChildren,
+    props: { open: { type: "boolean" }, title: { type: "string" } },
+    defaults: { open: true, title: "Sheet" },
+    mobileCategory: "content"
+  },
+  ActionSheet: {
+    name: "ActionSheet",
+    allowedChildren: anyChildren,
+    props: { title: { type: "string" } },
+    defaults: { title: "Actions" },
+    mobileCategory: "content"
+  },
+  Popover: {
+    name: "Popover",
+    allowedChildren: anyChildren,
+    props: { title: { type: "string" }, open: { type: "boolean" } },
+    defaults: { title: "Popover", open: true },
+    mobileCategory: "content"
+  },
+  Tooltip: {
+    name: "Tooltip",
+    allowedChildren: [],
+    props: { text: { type: "string", required: true } },
+    defaults: { text: "Helpful hint" },
+    mobileCategory: "content"
+  },
+  Chart: {
+    name: "Chart",
+    allowedChildren: [],
+    props: { type: { type: "string" }, points: { type: "number" } },
+    defaults: { type: "line", points: 7 },
+    mobileCategory: "content"
+  },
+  MapPreview: {
+    name: "MapPreview",
+    allowedChildren: [],
+    props: { location: { type: "string" } },
+    defaults: { location: "Berlin" },
+    mobileCategory: "content"
+  },
+  VideoPlayer: {
+    name: "VideoPlayer",
+    allowedChildren: [],
+    props: { title: { type: "string" }, duration: { type: "string" } },
+    defaults: { title: "Demo Video", duration: "02:10" },
+    mobileCategory: "content"
+  },
+  KanbanBoard: {
+    name: "KanbanBoard",
+    allowedChildren: anyChildren,
+    props: { columns: { type: "number" } },
+    defaults: { columns: 3 },
+    mobileCategory: "content"
+  },
+  CalendarStrip: {
+    name: "CalendarStrip",
+    allowedChildren: [],
+    props: { days: { type: "number" } },
+    defaults: { days: 7 },
+    mobileCategory: "content"
+  },
+  CommentThread: {
+    name: "CommentThread",
+    allowedChildren: anyChildren,
+    props: { comments: { type: "number" } },
+    defaults: { comments: 3 },
+    mobileCategory: "content"
+  },
+  CommandPalette: {
+    name: "CommandPalette",
+    allowedChildren: anyChildren,
+    props: { placeholder: { type: "string" }, open: { type: "boolean" } },
+    defaults: { placeholder: "Type a command", open: false },
+    mobileCategory: "navigation"
   }
 };
 

@@ -844,6 +844,97 @@ body {
   gap: 6px;
 }
 
+.otp {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.otp input {
+  min-width: 0;
+  text-align: center;
+}
+
+.segmented,
+.stepper,
+.pagination-dots,
+.breadcrumb,
+.nav-rail {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #121a29;
+}
+
+.segmented span,
+.stepper span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #1f2a3d;
+}
+
+.segmented span.active,
+.stepper span.active {
+  background: #2f5aa6;
+  color: #eff6ff;
+}
+
+.pagination-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4b5569;
+}
+
+.pagination-dots span.active {
+  background: #60a5fa;
+}
+
+.progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #172131;
+  border: 1px solid #2a3a52;
+  overflow: hidden;
+}
+
+.progress-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #38bdf8);
+}
+
+.circular-progress {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #3a4f74;
+  background: #111a2a;
+  font-size: 11px;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: linear-gradient(90deg, #1c2738, #2b3d59, #1c2738);
+}
+
+.widget-placeholder {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed #3e4f6a;
+  border-radius: 10px;
+  background: #131d2c;
+}
+
 .blueprint-library {
   display: grid;
   grid-template-columns: 1fr;

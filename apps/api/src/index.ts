@@ -2263,6 +2263,41 @@ function buildComponentBlueprintCatalog(): ComponentBlueprint[] {
       category: "content",
       description: "Step-based onboarding slides with progress indicators.",
       promptHint: "Insert multi-step onboarding card pattern."
+    },
+    {
+      key: "feedback-status",
+      name: "Feedback Status",
+      category: "content",
+      description: "Status feedback pack with banners, toast and progress.",
+      promptHint: "Add robust user feedback/status components."
+    },
+    {
+      key: "overlay-tools",
+      name: "Overlay Tools",
+      category: "content",
+      description: "Overlay set including bottom sheet, popover and action sheet.",
+      promptHint: "Insert overlay interaction patterns."
+    },
+    {
+      key: "planner-suite",
+      name: "Planner Suite",
+      category: "content",
+      description: "Productivity widgets such as kanban, calendar and comments.",
+      promptHint: "Add productivity modules to the screen."
+    },
+    {
+      key: "media-suite",
+      name: "Media Suite",
+      category: "content",
+      description: "Media-heavy blocks including carousel, map and video.",
+      promptHint: "Add media-rich presentation blocks."
+    },
+    {
+      key: "advanced-form",
+      name: "Advanced Form",
+      category: "input",
+      description: "Advanced input controls including OTP, date/time and file picker.",
+      promptHint: "Add advanced form controls."
     }
   ];
 
@@ -2516,6 +2551,48 @@ function buildNodeFromBlueprint(blueprintId: string): AstNode | null {
         createNode("Badge", nextId("dot"), { text: "2", tone: "muted" }),
         createNode("Badge", nextId("dot"), { text: "3", tone: "muted" })
       ])
+    ]);
+  }
+  if (family === "feedback-status") {
+    return createNode("Stack", nextId("feedback"), { gap: "sm", padding: "sm" }, [
+      createNode("AlertBanner", nextId("alert"), { text: "Your trial expires in 3 days", tone: "danger" }),
+      createNode("ProgressBar", nextId("progress"), { value: 64 }),
+      createNode("Snackbar", nextId("snackbar"), { text: "Autosaved", action: "Undo" }),
+      createNode("Toast", nextId("toast"), { text: "Profile updated" })
+    ]);
+  }
+  if (family === "overlay-tools") {
+    return createNode("Stack", nextId("overlay"), { gap: "sm", padding: "sm" }, [
+      createNode("BottomSheet", nextId("sheet"), { title: "Quick actions", open: true }),
+      createNode("ActionSheet", nextId("actions"), { title: "Choose action" }),
+      createNode("Popover", nextId("popover"), { title: "Tips", open: true }),
+      createNode("Tooltip", nextId("tooltip"), { text: "Tap and hold for details" })
+    ]);
+  }
+  if (family === "planner-suite") {
+    return createNode("Stack", nextId("planner"), { gap: "sm", padding: "sm" }, [
+      createNode("KanbanBoard", nextId("kanban"), { columns: 3 }),
+      createNode("CalendarStrip", nextId("calendar"), { days: 7 }),
+      createNode("CommentThread", nextId("thread"), { comments: 5 }),
+      createNode("CommandPalette", nextId("palette"), { placeholder: "Find command", open: false })
+    ]);
+  }
+  if (family === "media-suite") {
+    return createNode("Stack", nextId("media-suite"), { gap: "sm", padding: "sm" }, [
+      createNode("Carousel", nextId("carousel"), { slides: 3 }),
+      createNode("MapPreview", nextId("map"), { location: "Berlin" }),
+      createNode("VideoPlayer", nextId("video"), { title: "Product tour", duration: "02:10" }),
+      createNode("Chart", nextId("chart"), { type: "line", points: 7 })
+    ]);
+  }
+  if (family === "advanced-form") {
+    return createNode("Form", nextId("advanced-form"), { title: "Verification" }, [
+      createNode("PasswordField", nextId("password"), { label: "Password", placeholder: "••••••••", minHeight: 44 }),
+      createNode("OTPInput", nextId("otp"), { length: 6 }),
+      createNode("DatePicker", nextId("date"), { label: "Start Date", value: "2026-03-25" }),
+      createNode("TimePicker", nextId("time"), { label: "Reminder", value: "09:00" }),
+      createNode("FilePicker", nextId("file"), { label: "Upload asset", accept: "image/*" }),
+      createNode("Slider", nextId("slider"), { min: 0, max: 100, value: 50 })
     ]);
   }
   return null;

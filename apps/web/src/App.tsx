@@ -243,6 +243,14 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
   if (node.type === "Navbar") {
     return <div key={node.id} data-node-id={node.id} className={`${className} topbar`} onClick={onClick}>{String(node.props.title ?? "Navbar")}</div>;
   }
+  if (node.type === "AppBar") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} topbar`} onClick={onClick}>
+        <strong>{String(node.props.title ?? "App Bar")}</strong>
+        <small>{String(node.props.variant ?? "standard")}</small>
+      </div>
+    );
+  }
 
   if (node.type === "BottomTabBar") {
     const childTabs = node.children.filter((child) => child.type === "Tabs");
@@ -262,6 +270,24 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
       </div>
     );
   }
+  if (node.type === "PasswordField") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
+        <label>{String(node.props.label ?? "Password")}</label>
+        <input type="password" placeholder={String(node.props.placeholder ?? "••••••••")} readOnly style={{ minHeight: Number(node.props.minHeight ?? 44) }} />
+      </div>
+    );
+  }
+  if (node.type === "OTPInput") {
+    const length = Math.max(4, Number(node.props.length ?? 6));
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} otp`} onClick={onClick}>
+        {Array.from({ length }).map((_, index) => (
+          <input key={`${node.id}-${index}`} readOnly value="" placeholder="•" />
+        ))}
+      </div>
+    );
+  }
   if (node.type === "SearchBar") {
     return <input key={node.id} data-node-id={node.id} className={`${className} search`} onClick={onClick} readOnly placeholder={String(node.props.placeholder ?? "Search")} style={{ minHeight: Number(node.props.minHeight ?? 44) }} />;
   }
@@ -277,6 +303,113 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
       <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
         <label>{String(node.props.label ?? "Select")}</label>
         <select disabled>{options.map((option) => <option key={option}>{option}</option>)}</select>
+      </div>
+    );
+  }
+  if (node.type === "DatePicker" || node.type === "TimePicker" || node.type === "FilePicker") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
+        <label>{String(node.props.label ?? node.type)}</label>
+        <input
+          readOnly
+          value={String(node.props.value ?? node.props.accept ?? "")}
+          placeholder={node.type === "FilePicker" ? "image/*" : ""}
+        />
+      </div>
+    );
+  }
+  if (node.type === "Slider") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
+        <input type="range" min={Number(node.props.min ?? 0)} max={Number(node.props.max ?? 100)} value={Number(node.props.value ?? 50)} readOnly />
+      </div>
+    );
+  }
+  if (node.type === "SegmentedControl") {
+    const options = String(node.props.options ?? "One|Two|Three").split("|").map((item) => item.trim()).filter(Boolean);
+    const selected = Number(node.props.selected ?? 0);
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} segmented`} onClick={onClick}>
+        {options.map((option, index) => <span key={`${node.id}-${option}`} className={index === selected ? "active" : ""}>{option}</span>)}
+      </div>
+    );
+  }
+  if (node.type === "Breadcrumb") {
+    const items = String(node.props.items ?? "Home|Section|Page").split("|").map((item) => item.trim()).filter(Boolean);
+    return <div key={node.id} data-node-id={node.id} className={`${className} breadcrumb`} onClick={onClick}>{items.join(" / ")}</div>;
+  }
+  if (node.type === "Stepper") {
+    const steps = Math.max(2, Number(node.props.steps ?? 4));
+    const current = Math.max(1, Number(node.props.current ?? 1));
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} stepper`} onClick={onClick}>
+        {Array.from({ length: steps }).map((_, index) => (
+          <span key={`${node.id}-${index}`} className={index + 1 <= current ? "active" : ""}>{index + 1}</span>
+        ))}
+      </div>
+    );
+  }
+  if (node.type === "PaginationDots") {
+    const count = Math.max(2, Number(node.props.count ?? 3));
+    const active = Math.max(1, Number(node.props.active ?? 1));
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} pagination-dots`} onClick={onClick}>
+        {Array.from({ length: count }).map((_, index) => <span key={`${node.id}-${index}`} className={index + 1 === active ? "active" : ""} />)}
+      </div>
+    );
+  }
+  if (node.type === "AlertBanner" || node.type === "Snackbar" || node.type === "Toast" || node.type === "Chip" || node.type === "Tooltip") {
+    const text = String(node.props.text ?? node.props.action ?? node.type);
+    return <div key={node.id} data-node-id={node.id} className={`${className} tone-${String(node.props.tone ?? "surface")}`} onClick={onClick}>{text}</div>;
+  }
+  if (node.type === "ProgressBar") {
+    const value = Math.max(0, Math.min(100, Number(node.props.value ?? 45)));
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} progress`} onClick={onClick}>
+        <div className="progress-inner" style={{ width: `${value}%` }} />
+      </div>
+    );
+  }
+  if (node.type === "CircularProgress") {
+    const value = Math.max(0, Math.min(100, Number(node.props.value ?? 60)));
+    return <div key={node.id} data-node-id={node.id} className={`${className} circular-progress`} onClick={onClick}>{value}%</div>;
+  }
+  if (node.type === "Skeleton") {
+    const lines = Math.max(1, Number(node.props.lines ?? 3));
+    return (
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
+        {Array.from({ length: lines }).map((_, index) => <div key={`${node.id}-${index}`} className="skeleton-line" />)}
+      </div>
+    );
+  }
+  if (node.type === "Chart" || node.type === "MapPreview" || node.type === "VideoPlayer" || node.type === "CalendarStrip" || node.type === "CommandPalette") {
+    return <div key={node.id} data-node-id={node.id} className={`${className} widget-placeholder`} onClick={onClick}>{node.type}</div>;
+  }
+  if (node.type === "EmptyState") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={className} onClick={onClick}>
+        <strong>{String(node.props.title ?? "No data")}</strong>
+        <p>{String(node.props.description ?? "Try again later.")}</p>
+      </div>
+    );
+  }
+  if (node.type === "NavigationRail") {
+    const items = Math.max(3, Number(node.props.items ?? 4));
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} nav-rail`} onClick={onClick}>
+        {Array.from({ length: items }).map((_, index) => <span key={`${node.id}-${index}`}>•</span>)}
+      </div>
+    );
+  }
+  if (node.type === "Drawer") {
+    return <div key={node.id} data-node-id={node.id} className={`${className} drawer`} onClick={onClick}>Drawer ({String(node.props.side ?? "left")})</div>;
+  }
+  if (node.type === "Carousel" || node.type === "Timeline" || node.type === "KanbanBoard" || node.type === "CommentThread" || node.type === "BottomSheet" || node.type === "ActionSheet" || node.type === "Popover") {
+    return (
+      <div key={node.id} data-node-id={node.id} className={`${className} widget-placeholder`} onClick={onClick}>
+        <strong>{node.type}</strong>
+        <small>{Object.entries(node.props).map(([key, value]) => `${key}:${String(value)}`).join(" | ")}</small>
+        {node.children.map((child) => renderNode(child, selectedId, onSelect))}
       </div>
     );
   }
@@ -428,6 +561,40 @@ function buildNodePreset(type: string): AstNode {
   if (type === "Grid") return { id, type: "Grid", props: { columns: 2, gap: "md" }, children: [] };
   if (type === "Container") return { id, type: "Container", props: { padding: "md", tone: "surface", radius: "md" }, children: [] };
   if (type === "Form") return { id, type: "Form", props: { title: "Form" }, children: [] };
+  if (type === "AppBar") return { id, type: "AppBar", props: { title: "App Bar", variant: "standard" }, children: [] };
+  if (type === "SegmentedControl") return { id, type: "SegmentedControl", props: { options: "Overview|Stats|Settings", selected: 0 }, children: [] };
+  if (type === "NavigationRail") return { id, type: "NavigationRail", props: { items: 4 }, children: [] };
+  if (type === "Drawer") return { id, type: "Drawer", props: { open: false, side: "left" }, children: [] };
+  if (type === "Breadcrumb") return { id, type: "Breadcrumb", props: { items: "Home|Section|Page" }, children: [] };
+  if (type === "Stepper") return { id, type: "Stepper", props: { steps: 4, current: 1 }, children: [] };
+  if (type === "PaginationDots") return { id, type: "PaginationDots", props: { count: 3, active: 1 }, children: [] };
+  if (type === "PasswordField") return { id, type: "PasswordField", props: { label: "Password", placeholder: "••••••••", minHeight: 44 }, children: [] };
+  if (type === "OTPInput") return { id, type: "OTPInput", props: { length: 6 }, children: [] };
+  if (type === "Slider") return { id, type: "Slider", props: { min: 0, max: 100, value: 50 }, children: [] };
+  if (type === "DatePicker") return { id, type: "DatePicker", props: { label: "Date", value: "2026-03-25" }, children: [] };
+  if (type === "TimePicker") return { id, type: "TimePicker", props: { label: "Time", value: "09:00" }, children: [] };
+  if (type === "FilePicker") return { id, type: "FilePicker", props: { label: "Upload file", accept: "image/*" }, children: [] };
+  if (type === "AlertBanner") return { id, type: "AlertBanner", props: { text: "Important alert", tone: "accent" }, children: [] };
+  if (type === "Snackbar") return { id, type: "Snackbar", props: { text: "Changes saved", action: "Undo" }, children: [] };
+  if (type === "Toast") return { id, type: "Toast", props: { text: "Saved" }, children: [] };
+  if (type === "ProgressBar") return { id, type: "ProgressBar", props: { value: 45 }, children: [] };
+  if (type === "CircularProgress") return { id, type: "CircularProgress", props: { value: 70 }, children: [] };
+  if (type === "Skeleton") return { id, type: "Skeleton", props: { lines: 3 }, children: [] };
+  if (type === "EmptyState") return { id, type: "EmptyState", props: { title: "No data", description: "Try another filter." }, children: [] };
+  if (type === "Chip") return { id, type: "Chip", props: { text: "Chip", tone: "surface" }, children: [] };
+  if (type === "Carousel") return { id, type: "Carousel", props: { slides: 3 }, children: [] };
+  if (type === "Timeline") return { id, type: "Timeline", props: { items: 4 }, children: [] };
+  if (type === "BottomSheet") return { id, type: "BottomSheet", props: { title: "Bottom Sheet", open: true }, children: [] };
+  if (type === "ActionSheet") return { id, type: "ActionSheet", props: { title: "Actions" }, children: [] };
+  if (type === "Popover") return { id, type: "Popover", props: { title: "Popover", open: true }, children: [] };
+  if (type === "Tooltip") return { id, type: "Tooltip", props: { text: "Helpful hint" }, children: [] };
+  if (type === "Chart") return { id, type: "Chart", props: { type: "line", points: 7 }, children: [] };
+  if (type === "MapPreview") return { id, type: "MapPreview", props: { location: "Berlin" }, children: [] };
+  if (type === "VideoPlayer") return { id, type: "VideoPlayer", props: { title: "Demo video", duration: "02:10" }, children: [] };
+  if (type === "KanbanBoard") return { id, type: "KanbanBoard", props: { columns: 3 }, children: [] };
+  if (type === "CalendarStrip") return { id, type: "CalendarStrip", props: { days: 7 }, children: [] };
+  if (type === "CommentThread") return { id, type: "CommentThread", props: { comments: 4 }, children: [] };
+  if (type === "CommandPalette") return { id, type: "CommandPalette", props: { placeholder: "Type a command", open: false }, children: [] };
   return { id, type: "Text", props: { text: `Unsupported preset for ${type}` }, children: [] };
 }
 
@@ -538,7 +705,12 @@ export function App() {
       "Card", "Container", "Grid", "Spacer",
       "Heading", "Text", "Image", "Badge", "Avatar", "List",
       "Button", "TextField", "SearchBar", "Checkbox", "Toggle", "Select",
-      "Form", "Table", "Modal"
+      "Form", "Table", "Modal",
+      "AppBar", "SegmentedControl", "NavigationRail", "Drawer", "Breadcrumb", "Stepper", "PaginationDots",
+      "PasswordField", "OTPInput", "Slider", "DatePicker", "TimePicker", "FilePicker",
+      "AlertBanner", "Snackbar", "Toast", "ProgressBar", "CircularProgress", "Skeleton", "EmptyState", "Chip",
+      "Carousel", "Timeline", "BottomSheet", "ActionSheet", "Popover", "Tooltip",
+      "Chart", "MapPreview", "VideoPlayer", "KanbanBoard", "CalendarStrip", "CommentThread", "CommandPalette"
     ],
     []
   );
