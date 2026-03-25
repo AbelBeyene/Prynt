@@ -233,6 +233,16 @@ app.get("/templates", route((_req, res) => {
   res.json({ templates: api.listTemplates() });
 }));
 
+app.get("/components/blueprints", route((req, res) => {
+  const query = typeof req.query.query === "string" ? req.query.query : "";
+  res.json({ items: api.listComponentBlueprints(query) });
+}));
+
+app.post("/projects/:projectId/components/instantiate", route((req, res) => {
+  const response = api.instantiateComponentBlueprint(req.params.projectId!, req.body);
+  res.json(response);
+}));
+
 app.post("/projects/:projectId/templates/apply", route((req, res) => {
   const file = api.applyTemplate(req.params.projectId!, req.body);
   res.json(file);

@@ -1,4 +1,5 @@
 import { cloneDocument, findNodePath, type AstNode, type DocumentAst } from "@prynt/ast";
+import { getComponentDefinition } from "@prynt/component-registry";
 import { runEditPipeline } from "@prynt/core";
 import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
@@ -85,6 +86,16 @@ export interface ExportResult {
   fileId: string;
   fileName: string;
   content: string;
+}
+
+export interface ComponentBlueprint {
+  id: string;
+  name: string;
+  family: string;
+  category: "layout" | "navigation" | "content" | "input" | "data" | "commerce" | "marketing";
+  style: "modern" | "minimal" | "enterprise" | "glass" | "dark";
+  description: string;
+  promptHint: string;
 }
 
 export interface ApplyPatchRequest {
@@ -175,6 +186,12 @@ export interface DuplicateFileRequest {
 export interface ApplyTemplateRequest {
   fileId?: string;
   templateId: string;
+}
+
+export interface InstantiateBlueprintRequest {
+  fileId?: string;
+  parentId?: string;
+  blueprintId: string;
 }
 
 interface PersistedProjectState {
@@ -346,6 +363,44 @@ export class EditorApiService {
       { id: "ecommerce-home", name: "E-commerce Home", category: "marketing", style: "modern-saas", description: "Product categories, featured items, and promotions." },
       { id: "form-heavy", name: "Form-Heavy Workspace", category: "forms", style: "light", description: "Long-form workflow with grouped input sections." }
     ];
+  }
+
+  listComponentBlueprints(query = ""): ComponentBlueprint[] {
+    const all = buildComponentBlueprintCatalog();
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((item) =>
+      item.name.toLowerCase().includes(q) ||
+      item.family.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      item.style.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q)
+    );
+  }
+
+  instantiateComponentBlueprint(projectId: string, request: InstantiateBlueprintRequest): ApplyPatchResponse {
+    const { file } = this.resolveFile(projectId, request.fileId);
+    const requestedParentId = request.parentId ?? file.document.root.id;
+    const requestedParent = findNodePath(file.document.root, requestedParentId)?.node;
+    const parent = requestedParent ?? file.document.root;
+    const parentDefinition = getComponentDefinition(parent.type);
+    const node = buildNodeFromBlueprint(request.blueprintId);
+    if (!node) {
+      throw new Error(`Unknown blueprint: ${request.blueprintId}`);
+    }
+    if (!parentDefinition) {
+      throw new Error(`Selected parent type '${parent.type}' is not supported.`);
+    }
+    if (parentDefinition.allowedChildren !== "any" && !parentDefinition.allowedChildren.includes(node.type)) {
+      throw new Error(`Cannot insert '${node.type}' under '${parent.type}'. Select a container-like parent and try again.`);
+    }
+
+    return this.applyWithAutoRepair(
+      file,
+      [{ opId: nextId("blueprint"), type: "addNode", parentId: parent.id, node }],
+      `Instantiate blueprint: ${request.blueprintId}`,
+      true
+    );
   }
 
   applyTemplate(projectId: string, request: ApplyTemplateRequest): FileSummary {
@@ -1847,4 +1902,220 @@ function buildTemplateDocument(templateId: string, fileId: string): DocumentAst 
     version: nowVersion,
     root: createTemplateRoot("Dashboard", buildDashboardStack().children)
   };
+}
+
+function buildComponentBlueprintCatalog(): ComponentBlueprint[] {
+  const styles: ComponentBlueprint["style"][] = ["modern", "minimal", "enterprise", "glass", "dark"];
+  const families: Array<{
+    key: string;
+    name: string;
+    category: ComponentBlueprint["category"];
+    description: string;
+    promptHint: string;
+  }> = [
+    {
+      key: "hero",
+      name: "Hero",
+      category: "marketing",
+      description: "Top-of-screen value proposition section with heading, text and CTA.",
+      promptHint: "Add a hero area with clear headline and primary action."
+    },
+    {
+      key: "stat-card",
+      name: "Stat Card",
+      category: "data",
+      description: "Compact metrics section with highlighted KPIs.",
+      promptHint: "Insert dashboard metrics cards."
+    },
+    {
+      key: "list-feed",
+      name: "List Feed",
+      category: "content",
+      description: "Scrollable list group for activity, tasks, or updates.",
+      promptHint: "Add a feed-style list with supporting detail."
+    },
+    {
+      key: "auth-form",
+      name: "Auth Form",
+      category: "input",
+      description: "Credential entry form and sign-in call to action.",
+      promptHint: "Create a sign-in form with action button."
+    },
+    {
+      key: "settings-group",
+      name: "Settings Group",
+      category: "input",
+      description: "Grouped preference controls with toggles and selectors.",
+      promptHint: "Add a settings section with grouped options."
+    },
+    {
+      key: "pricing-section",
+      name: "Pricing Section",
+      category: "commerce",
+      description: "Plan overview with pricing emphasis and subscribe action.",
+      promptHint: "Add a pricing section with a highlighted tier."
+    },
+    {
+      key: "checkout-summary",
+      name: "Checkout Summary",
+      category: "commerce",
+      description: "Order summary with total and confirmation action.",
+      promptHint: "Insert checkout summary with order rows and total."
+    },
+    {
+      key: "analytics-table",
+      name: "Analytics Table",
+      category: "data",
+      description: "Tabular data area with heading and filters.",
+      promptHint: "Add a table section for operational data."
+    },
+    {
+      key: "onboarding-step",
+      name: "Onboarding Step",
+      category: "content",
+      description: "Step-by-step onboarding card with progress cues.",
+      promptHint: "Create onboarding steps with progress context."
+    },
+    {
+      key: "nav-shell",
+      name: "Navigation Shell",
+      category: "navigation",
+      description: "Top and bottom navigation container for mobile screens.",
+      promptHint: "Wrap the screen with mobile navigation patterns."
+    },
+    {
+      key: "widget-panel",
+      name: "Widget Panel",
+      category: "layout",
+      description: "Flexible widget container with modular cards.",
+      promptHint: "Add a flexible widget panel with reusable modules."
+    }
+  ];
+
+  const variants = Array.from({ length: 10 }, (_, index) => index + 1);
+  const output: ComponentBlueprint[] = [];
+  for (const family of families) {
+    for (const variant of variants) {
+      output.push({
+        id: `bp-${family.key}-v${String(variant).padStart(2, "0")}`,
+        name: `${family.name} ${variant}`,
+        family: family.name,
+        category: family.category,
+        style: styles[(variant - 1) % styles.length] ?? "modern",
+        description: `${family.description} Variant ${variant}.`,
+        promptHint: family.promptHint
+      });
+    }
+  }
+  return output;
+}
+
+function buildNodeFromBlueprint(blueprintId: string): AstNode | null {
+  const match = /^bp-([a-z-]+)-v(\d{2})$/.exec(blueprintId);
+  if (!match) {
+    return null;
+  }
+
+  const family = match[1] ?? "";
+  const variant = Number(match[2] ?? "1");
+  const toneCycle = ["primary", "secondary", "accent", "surface", "muted"];
+  const tone = toneCycle[(variant - 1) % toneCycle.length] ?? "surface";
+  const radius = variant % 2 === 0 ? "xl" : "lg";
+  const gap = variant % 3 === 0 ? "lg" : "md";
+
+  if (family === "hero") {
+    return createNode("Card", nextId("hero"), { tone, radius }, [
+      createNode("Heading", nextId("heading"), { text: `Hero headline ${variant}`, size: variant % 2 === 0 ? "3xl" : "2xl" }),
+      createNode("Text", nextId("text"), { text: "Explain value clearly in one short sentence." }),
+      createNode("Button", nextId("button"), { text: "Get Started", tone: "primary", size: "lg", minHeight: 48 })
+    ]);
+  }
+  if (family === "stat-card") {
+    return createNode("Grid", nextId("stats"), { columns: 2, gap }, [
+      createNode("Card", nextId("card"), { tone: "surface", radius }, [
+        createNode("Heading", nextId("heading"), { text: "Revenue", size: "lg" }),
+        createNode("Text", nextId("text"), { text: `${variant * 12}k` })
+      ]),
+      createNode("Card", nextId("card"), { tone: "surface", radius }, [
+        createNode("Heading", nextId("heading"), { text: "Users", size: "lg" }),
+        createNode("Text", nextId("text"), { text: `${variant * 140}` })
+      ])
+    ]);
+  }
+  if (family === "list-feed") {
+    return createNode("List", nextId("feed"), { dense: variant % 2 === 0 }, [
+      createNode("ListItem", nextId("item"), { title: `Feed item ${variant}.1`, subtitle: "Secondary detail" }),
+      createNode("ListItem", nextId("item"), { title: `Feed item ${variant}.2`, subtitle: "Secondary detail" }),
+      createNode("ListItem", nextId("item"), { title: `Feed item ${variant}.3`, subtitle: "Secondary detail" })
+    ]);
+  }
+  if (family === "auth-form") {
+    return createNode("Form", nextId("auth"), { title: "Sign In" }, [
+      createNode("TextField", nextId("email"), { label: "Email", placeholder: "you@company.com", minHeight: 44 }),
+      createNode("TextField", nextId("password"), { label: "Password", placeholder: "••••••••", minHeight: 44 }),
+      createNode("Checkbox", nextId("remember"), { label: "Remember me", checked: variant % 2 === 0 }),
+      createNode("Button", nextId("submit"), { text: "Continue", tone: "primary", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "settings-group") {
+    return createNode("Card", nextId("settings"), { tone: "surface", radius }, [
+      createNode("Heading", nextId("heading"), { text: "Preferences", size: "lg" }),
+      createNode("Toggle", nextId("toggle"), { label: "Push notifications", checked: true }),
+      createNode("Toggle", nextId("toggle"), { label: "Email updates", checked: variant % 2 === 0 }),
+      createNode("Select", nextId("select"), { label: "Language", options: "English|German|French" })
+    ]);
+  }
+  if (family === "pricing-section") {
+    return createNode("Card", nextId("pricing"), { tone: tone === "muted" ? "surface" : tone, radius: "xl" }, [
+      createNode("Heading", nextId("heading"), { text: `Pro Plan ${variant}`, size: "2xl" }),
+      createNode("Text", nextId("text"), { text: `$${9 + variant}/month` }),
+      createNode("PricingTable", nextId("pricing-table"), { tier: `Tier ${variant}`, tone: "primary" }),
+      createNode("Button", nextId("button"), { text: "Start trial", tone: "accent", size: "lg", minHeight: 48 })
+    ]);
+  }
+  if (family === "checkout-summary") {
+    return createNode("Card", nextId("checkout"), { tone: "surface", radius }, [
+      createNode("Heading", nextId("heading"), { text: "Order Summary", size: "xl" }),
+      createNode("List", nextId("list"), {}, [
+        createNode("ListItem", nextId("item"), { title: "Subtotal", subtitle: `$${variant * 12}` }),
+        createNode("ListItem", nextId("item"), { title: "Shipping", subtitle: "$8" }),
+        createNode("ListItem", nextId("item"), { title: "Total", subtitle: `$${variant * 12 + 8}` })
+      ]),
+      createNode("Button", nextId("button"), { text: "Place Order", tone: "primary", size: "lg", minHeight: 48 })
+    ]);
+  }
+  if (family === "analytics-table") {
+    return createNode("Stack", nextId("analytics"), { gap, padding: "md" }, [
+      createNode("Heading", nextId("heading"), { text: "Analytics", size: "xl" }),
+      createNode("SearchBar", nextId("search"), { placeholder: "Filter rows", minHeight: 44 }),
+      createNode("Table", nextId("table"), { rows: 4 + (variant % 4), columns: 3 + (variant % 2) })
+    ]);
+  }
+  if (family === "onboarding-step") {
+    return createNode("Card", nextId("onboarding"), { tone: "surface", radius: "xl" }, [
+      createNode("Badge", nextId("badge"), { text: `Step ${Math.max(1, variant % 5)}`, tone: "accent" }),
+      createNode("Heading", nextId("heading"), { text: "Complete setup", size: "xl" }),
+      createNode("Text", nextId("text"), { text: "Finish these actions to unlock full workspace power." }),
+      createNode("Button", nextId("button"), { text: "Continue", tone: "primary", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "nav-shell") {
+    return createNode("Container", nextId("nav-shell"), { padding: "sm", tone: "surface", radius: "lg" }, [
+      createNode("TopBar", nextId("topbar"), { title: `Workspace ${variant}` }),
+      createNode("BottomTabBar", nextId("tabs"), { tabs: Math.min(5, 3 + (variant % 3)) })
+    ]);
+  }
+  if (family === "widget-panel") {
+    return createNode("Grid", nextId("widgets"), { columns: 2, gap }, [
+      createNode("Card", nextId("widget"), { tone: "surface", radius }, [
+        createNode("Heading", nextId("heading"), { text: "Progress", size: "lg" }),
+        createNode("Text", nextId("text"), { text: `${variant * 9}% complete` })
+      ]),
+      createNode("Card", nextId("widget"), { tone: "surface", radius }, [
+        createNode("Heading", nextId("heading"), { text: "Upcoming", size: "lg" }),
+        createNode("Text", nextId("text"), { text: "3 scheduled tasks" })
+      ])
+    ]);
+  }
+  return null;
 }

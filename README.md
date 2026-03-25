@@ -20,6 +20,7 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Undo/redo.
 - Artboard lifecycle operations (create, rename, duplicate, delete).
 - Template library with apply-to-screen flow.
+- 110-type component blueprint library with searchable instantiate flow.
 - Reusable section library (save selected structure and reinsert later).
 - Multi-format exports (JSON, DSL, React-like component output, schema summary).
 - Mobile device previews: iPhone (390), Android (360), Tablet (768).
@@ -102,6 +103,8 @@ npm run smoke:api
 - `GET /projects/:projectId/prompt/history`
 - `GET /projects/:projectId/prompt/suggestions`
 - `POST /projects/:projectId/templates/apply`
+- `GET /components/blueprints?query=...`
+- `POST /projects/:projectId/components/instantiate`
 - `POST /projects/:projectId/patch`
 - `POST /projects/:projectId/patch/preview`
 - `POST /projects/:projectId/files/:fileId/duplicate`

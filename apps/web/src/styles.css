@@ -844,6 +844,41 @@ body {
   gap: 6px;
 }
 
+.blueprint-library {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 10px 0 4px;
+  padding: 8px;
+  border: 1px solid #2f3f5a;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #1a2538, #141d2d);
+}
+
+.blueprint-library-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.blueprint-meta {
+  font-size: 12px;
+  color: #d9e2f7;
+  border: 1px solid #31405a;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(16, 22, 34, 0.8);
+}
+
+.blueprint-hint {
+  margin-top: 5px;
+  color: #9eb3d5;
+  font-size: 11px;
+}
+
 .prompt-dock {
   height: var(--prompt-dock-h);
   border-top: 1px solid var(--border);

@@ -73,6 +73,16 @@ interface TemplateDefinition {
   description: string;
 }
 
+interface ComponentBlueprint {
+  id: string;
+  name: string;
+  family: string;
+  category: "layout" | "navigation" | "content" | "input" | "data" | "commerce" | "marketing";
+  style: "modern" | "minimal" | "enterprise" | "glass" | "dark";
+  description: string;
+  promptHint: string;
+}
+
 interface ExportResult {
   format: "json" | "dsl" | "react" | "schema";
   fileId: string;
@@ -467,6 +477,10 @@ export function App() {
   const [isRefreshingPromptLibrary, setIsRefreshingPromptLibrary] = useState(false);
   const [templates, setTemplates] = useState<TemplateDefinition[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("mobile-dashboard");
+  const [blueprintQuery, setBlueprintQuery] = useState("");
+  const [blueprints, setBlueprints] = useState<ComponentBlueprint[]>([]);
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
+  const [isLoadingBlueprints, setIsLoadingBlueprints] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportResult["format"]>("json");
   const [exportText, setExportText] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -533,6 +547,10 @@ export function App() {
     if (!activeDocument || !selectedId) return null;
     return findNode(activeDocument.root, selectedId);
   }, [activeDocument, selectedId]);
+  const selectedBlueprint = useMemo(
+    () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
+    [blueprints, selectedBlueprintId]
+  );
   const visibleLayerIds = useMemo(
     () => (activeDocument ? collectVisibleLayerIds(activeDocument.root, layerSearch) : new Set<string>()),
     [activeDocument, layerSearch]
@@ -672,6 +690,26 @@ export function App() {
     }
   }
 
+  async function refreshBlueprints(query = "") {
+    setIsLoadingBlueprints(true);
+    try {
+      const response = await apiRequest<{ items: ComponentBlueprint[] }>(
+        `/components/blueprints?query=${encodeURIComponent(query)}`
+      );
+      setBlueprints(response.items);
+      setSelectedBlueprintId((current) => {
+        if (response.items.some((item) => item.id === current)) {
+          return current;
+        }
+        return response.items[0]?.id ?? "";
+      });
+    } catch {
+      setBlueprints([]);
+    } finally {
+      setIsLoadingBlueprints(false);
+    }
+  }
+
   async function refreshProjects() {
     try {
       const response = await apiRequest<{ projects: ProjectSummary[] }>("/projects");
@@ -708,6 +746,7 @@ export function App() {
       await refreshPromptLibrary(created.projectId, created.files[0].fileId);
     }
     await refreshTemplates();
+    await refreshBlueprints("");
     await refreshProjects();
     setStatus(`Project ready: ${created.projectId}`);
 
@@ -795,6 +834,13 @@ export function App() {
     }, 150);
     return () => window.clearTimeout(timer);
   }, [projectId, activeFileId, promptLibraryQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshBlueprints(blueprintQuery);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [blueprintQuery]);
 
   async function applyPatch(patches: PatchOp[], reason: string) {
     if (!projectId || !activeFileId) return;
@@ -1137,6 +1183,34 @@ export function App() {
       await refreshVersions(projectId, file.fileId);
     } catch (error) {
       setStatus(`Template apply failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function instantiateSelectedBlueprint() {
+    if (!projectId || !activeFileId || !selectedBlueprintId) return;
+    const parentId = selectedId ?? activeDocument?.root.id;
+    if (!parentId) {
+      setStatus("Select a valid target before inserting a blueprint.");
+      return;
+    }
+    try {
+      const response = await apiRequest<{ applied: boolean; fileId: string; document: DocumentAst; repairSuggestions: string[] }>(
+        `/projects/${projectId}/components/instantiate`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            fileId: activeFileId,
+            parentId,
+            blueprintId: selectedBlueprintId
+          })
+        }
+      );
+      patchFileDocument(response.fileId, response.document);
+      setStatus(response.applied ? "Blueprint inserted." : response.repairSuggestions.join(" | "));
+      setPreviewDocument(null);
+      await refreshVersions(projectId, response.fileId);
+    } catch (error) {
+      setStatus(`Blueprint insert failed: ${(error as Error).message}`);
     }
   }
 
@@ -1682,6 +1756,33 @@ export function App() {
                   <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Quick Card</button>
                   <button type="button" className="btn-soft" onClick={() => void duplicateSelected()}>Duplicate</button>
                   <button type="button" className="btn-danger" onClick={() => void removeSelected()}>Remove</button>
+                </div>
+                <div className="blueprint-library">
+                  <div className="blueprint-library-head">
+                    <span>Blueprint Library</span>
+                    <span>{isLoadingBlueprints ? "Loading..." : `${blueprints.length} items`}</span>
+                  </div>
+                  <input
+                    value={blueprintQuery}
+                    onChange={(event) => setBlueprintQuery(event.target.value)}
+                    placeholder="Search 110 blueprint types..."
+                  />
+                  <select value={selectedBlueprintId} onChange={(event) => setSelectedBlueprintId(event.target.value)}>
+                    {blueprints.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} - {item.family} ({item.style})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedBlueprint ? (
+                    <div className="blueprint-meta">
+                      <div>{selectedBlueprint.description}</div>
+                      <div className="blueprint-hint">{selectedBlueprint.promptHint}</div>
+                    </div>
+                  ) : null}
+                  <button type="button" className="btn-primary" onClick={() => void instantiateSelectedBlueprint()} disabled={!selectedBlueprintId}>
+                    Insert Blueprint
+                  </button>
                 </div>
               </>
             ) : <p>Select a node.</p>

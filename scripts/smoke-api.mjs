@@ -47,8 +47,19 @@ async function run() {
   assert(Array.isArray(result.body.templates) && result.body.templates.length > 0, "Template list is empty.");
   const templateId = result.body.templates[0].id;
 
+  result = await request("/components/blueprints");
+  assert(Array.isArray(result.body.items) && result.body.items.length === 110, "Blueprint list should contain exactly 110 items.");
+  const blueprintId = result.body.items[0]?.id;
+  assert(typeof blueprintId === "string", "Blueprint list is missing id.");
+
   result = await request(`/projects/${pid}/templates/apply`, { method: "POST", body: JSON.stringify({ fileId: file2, templateId }) });
   assert(result.response.ok, "Failed to apply template.");
+
+  result = await request(`/projects/${pid}/components/instantiate`, {
+    method: "POST",
+    body: JSON.stringify({ fileId: file2, parentId: "stack-1", blueprintId })
+  });
+  assert(result.response.ok && result.body.applied, "Blueprint instantiate failed.");
 
   result = await request(`/projects/${pid}/prompt/simulate`, {
     method: "POST",
