@@ -361,7 +361,15 @@ export class EditorApiService {
       { id: "admin-panel", name: "Admin Panel", category: "admin", style: "enterprise", description: "Data-driven admin layout with stats and table." },
       { id: "onboarding-flow", name: "Onboarding Flow", category: "onboarding", style: "mobile-native", description: "Welcome, value props, and account setup steps." },
       { id: "ecommerce-home", name: "E-commerce Home", category: "marketing", style: "modern-saas", description: "Product categories, featured items, and promotions." },
-      { id: "form-heavy", name: "Form-Heavy Workspace", category: "forms", style: "light", description: "Long-form workflow with grouped input sections." }
+      { id: "form-heavy", name: "Form-Heavy Workspace", category: "forms", style: "light", description: "Long-form workflow with grouped input sections." },
+      { id: "material-commerce", name: "Material Commerce", category: "mobile-app", style: "light", description: "Material-inspired shop screen with filters and action cards." },
+      { id: "ios-settings", name: "iOS Settings", category: "mobile-app", style: "minimal", description: "Native-like settings hierarchy with grouped controls." },
+      { id: "ant-enterprise-admin", name: "Ant Enterprise Admin", category: "admin", style: "enterprise", description: "Dense data workspace with KPI strip and management table." },
+      { id: "bootstrap-marketing", name: "Bootstrap Marketing", category: "landing-page", style: "light", description: "Classic marketing sections with clear conversion CTA." },
+      { id: "shadcn-dashboard", name: "Shadcn Dashboard", category: "dashboard", style: "dark", description: "Card-first dark dashboard with compact widgets." },
+      { id: "fluent-workbench", name: "Fluent Workbench", category: "admin", style: "enterprise", description: "Productivity workspace inspired by fluent enterprise patterns." },
+      { id: "glass-wallet", name: "Glass Wallet", category: "mobile-app", style: "glassmorphism", description: "Glassmorphism finance surface with balances and quick actions." },
+      { id: "notion-knowledge", name: "Knowledge Workspace", category: "forms", style: "minimal", description: "Content-heavy documentation layout with search and sections." }
     ];
   }
 
@@ -1891,6 +1899,167 @@ function buildTemplateDocument(templateId: string, fileId: string): DocumentAst 
           createNode("RadioGroup", "rg-1", { label: "Target Platform", options: "Mobile|Web|Both" }),
           createNode("TextArea", "ta-1", { placeholder: "Describe your objectives", rows: 5 }),
           createNode("Button", "btn-1", { text: "Save and Continue", tone: "primary", size: "lg", minHeight: 48 })
+        ])
+      ], false)
+    };
+  }
+
+  if (templateId === "material-commerce") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Discover", [
+        createNode("SearchBar", "search-1", { placeholder: "Search products", minHeight: 44 }),
+        createNode("Tabs", "tabs-1", { label: "For You" }),
+        createNode("Grid", "grid-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "card-1", { tone: "surface", radius: "md" }, [
+            createNode("Heading", "h1", { text: "Running Shoes", size: "lg" }),
+            createNode("Text", "t1", { text: "$129" }),
+            createNode("Button", "b1", { text: "Add", tone: "primary", size: "md", minHeight: 44 })
+          ]),
+          createNode("Card", "card-2", { tone: "surface", radius: "md" }, [
+            createNode("Heading", "h2", { text: "Smart Watch", size: "lg" }),
+            createNode("Text", "t2", { text: "$219" }),
+            createNode("Button", "b2", { text: "Add", tone: "primary", size: "md", minHeight: 44 })
+          ])
+        ])
+      ])
+    };
+  }
+
+  if (templateId === "ios-settings") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Settings", [
+        createNode("Card", "group-1", { tone: "surface", radius: "lg" }, [
+          createNode("List", "list-1", {}, [
+            createNode("ListItem", "li-1", { title: "Airplane Mode", subtitle: "Off" }),
+            createNode("ListItem", "li-2", { title: "Wi-Fi", subtitle: "Prynt Office" }),
+            createNode("ListItem", "li-3", { title: "Bluetooth", subtitle: "On" })
+          ])
+        ]),
+        createNode("Card", "group-2", { tone: "surface", radius: "lg" }, [
+          createNode("Toggle", "toggle-1", { label: "Background App Refresh", checked: true }),
+          createNode("Toggle", "toggle-2", { label: "Location Services", checked: true })
+        ])
+      ], false)
+    };
+  }
+
+  if (templateId === "ant-enterprise-admin") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Operations", [
+        createNode("Grid", "kpi-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "k1", { tone: "surface", radius: "md" }, [createNode("Heading", "h1", { text: "Open Tickets", size: "lg" }), createNode("Text", "t1", { text: "342" })]),
+          createNode("Card", "k2", { tone: "surface", radius: "md" }, [createNode("Heading", "h2", { text: "SLA Risk", size: "lg" }), createNode("Badge", "bd-1", { text: "18 Critical", tone: "danger" })])
+        ]),
+        createNode("Table", "table-1", { rows: 8, columns: 5 }),
+        createNode("Button", "btn-1", { text: "Export report", tone: "secondary", size: "md", minHeight: 44 })
+      ], false)
+    };
+  }
+
+  if (templateId === "bootstrap-marketing") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Launch Your Next Product", [
+        createNode("Card", "hero-1", { tone: "primary", radius: "lg" }, [
+          createNode("Heading", "h1", { text: "Simple pricing. Fast setup.", size: "3xl" }),
+          createNode("Text", "t1", { text: "Ship in hours with reusable templates and AI editing." }),
+          createNode("Button", "btn-1", { text: "Start Free", tone: "accent", size: "lg", minHeight: 48 })
+        ]),
+        createNode("Grid", "benefits-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "b1", { tone: "surface", radius: "md" }, [createNode("Heading", "bh1", { text: "Reusable blocks", size: "lg" })]),
+          createNode("Card", "b2", { tone: "surface", radius: "md" }, [createNode("Heading", "bh2", { text: "Token-based styles", size: "lg" })])
+        ]),
+        createNode("PricingTable", "pricing-1", { tier: "Team", tone: "primary" })
+      ], false)
+    };
+  }
+
+  if (templateId === "shadcn-dashboard") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Overview", [
+        createNode("Grid", "stats-1", { columns: 2, gap: "sm" }, [
+          createNode("Card", "card-1", { tone: "muted", radius: "lg" }, [createNode("Heading", "h1", { text: "ARR", size: "lg" }), createNode("Text", "t1", { text: "$1.2M" })]),
+          createNode("Card", "card-2", { tone: "muted", radius: "lg" }, [createNode("Heading", "h2", { text: "Active Users", size: "lg" }), createNode("Text", "t2", { text: "19,402" })])
+        ]),
+        createNode("Card", "card-3", { tone: "surface", radius: "lg" }, [
+          createNode("Heading", "h3", { text: "Recent Events", size: "xl" }),
+          createNode("List", "list-1", {}, [
+            createNode("ListItem", "li-1", { title: "Invoice paid", subtitle: "2 min ago" }),
+            createNode("ListItem", "li-2", { title: "Feature enabled", subtitle: "15 min ago" })
+          ])
+        ])
+      ], false)
+    };
+  }
+
+  if (templateId === "fluent-workbench") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Workbench", [
+        createNode("SearchBar", "search-1", { placeholder: "Search tasks and docs", minHeight: 44 }),
+        createNode("Grid", "grid-1", { columns: 2, gap: "md" }, [
+          createNode("Card", "card-1", { tone: "surface", radius: "lg" }, [createNode("Heading", "h1", { text: "Assigned to me", size: "lg" }), createNode("Text", "t1", { text: "14 open items" })]),
+          createNode("Card", "card-2", { tone: "surface", radius: "lg" }, [createNode("Heading", "h2", { text: "Approvals", size: "lg" }), createNode("Text", "t2", { text: "5 pending approvals" })])
+        ]),
+        createNode("Table", "table-1", { rows: 6, columns: 4 })
+      ], false)
+    };
+  }
+
+  if (templateId === "glass-wallet") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Wallet", [
+        createNode("Card", "balance-1", { tone: "accent", radius: "xl" }, [
+          createNode("Text", "t1", { text: "Total Balance" }),
+          createNode("Heading", "h1", { text: "$12,480.94", size: "3xl" }),
+          createNode("Button", "btn-1", { text: "Add Funds", tone: "primary", size: "md", minHeight: 44 })
+        ]),
+        createNode("Grid", "quick-1", { columns: 2, gap: "md" }, [
+          createNode("Button", "b1", { text: "Send", tone: "secondary", size: "md", minHeight: 44 }),
+          createNode("Button", "b2", { text: "Request", tone: "secondary", size: "md", minHeight: 44 })
+        ]),
+        createNode("List", "list-1", {}, [
+          createNode("ListItem", "tx1", { title: "Coffee Shop", subtitle: "-$6.40" }),
+          createNode("ListItem", "tx2", { title: "Salary", subtitle: "+$4,250.00" })
+        ])
+      ])
+    };
+  }
+
+  if (templateId === "notion-knowledge") {
+    return {
+      schemaVersion: "1.0.0",
+      docId: fileId,
+      version: nowVersion,
+      root: createTemplateRoot("Knowledge Base", [
+        createNode("SearchBar", "search-1", { placeholder: "Search docs", minHeight: 44 }),
+        createNode("Card", "card-1", { tone: "surface", radius: "md" }, [
+          createNode("Heading", "h1", { text: "Getting Started", size: "xl" }),
+          createNode("Text", "t1", { text: "Setup guides, policies, and onboarding checklists." })
+        ]),
+        createNode("List", "list-1", {}, [
+          createNode("ListItem", "doc-1", { title: "Engineering Handbook", subtitle: "Updated 2 days ago" }),
+          createNode("ListItem", "doc-2", { title: "Product Briefs", subtitle: "Updated today" }),
+          createNode("ListItem", "doc-3", { title: "Design System", subtitle: "Updated 1 week ago" })
         ])
       ], false)
     };
