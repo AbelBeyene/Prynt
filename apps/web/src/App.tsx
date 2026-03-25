@@ -1765,7 +1765,7 @@ export function App() {
                   <input
                     value={blueprintQuery}
                     onChange={(event) => setBlueprintQuery(event.target.value)}
-                    placeholder="Search 110 blueprint types..."
+                    placeholder="Search blueprint types..."
                   />
                   <select value={selectedBlueprintId} onChange={(event) => setSelectedBlueprintId(event.target.value)}>
                     {blueprints.map((item) => (

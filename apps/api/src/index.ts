@@ -2158,6 +2158,111 @@ function buildComponentBlueprintCatalog(): ComponentBlueprint[] {
       category: "layout",
       description: "Flexible widget container with modular cards.",
       promptHint: "Add a flexible widget panel with reusable modules."
+    },
+    {
+      key: "appbar-standard",
+      name: "App Bar Standard",
+      category: "navigation",
+      description: "Default top app bar with title and optional action slot.",
+      promptHint: "Add a clean standard app bar for the screen."
+    },
+    {
+      key: "appbar-search",
+      name: "App Bar Search",
+      category: "navigation",
+      description: "Top area combining title and integrated search input.",
+      promptHint: "Convert top navigation into a search-first app bar."
+    },
+    {
+      key: "appbar-contextual",
+      name: "App Bar Contextual",
+      category: "navigation",
+      description: "Contextual actions row for selected content states.",
+      promptHint: "Add contextual app bar actions for selected content."
+    },
+    {
+      key: "button-stack",
+      name: "Button Stack",
+      category: "input",
+      description: "Primary/secondary button combinations for CTA blocks.",
+      promptHint: "Insert a stacked button area with clear hierarchy."
+    },
+    {
+      key: "button-cluster",
+      name: "Button Cluster",
+      category: "input",
+      description: "Compact action row with icon and text buttons.",
+      promptHint: "Add a compact action cluster with quick buttons."
+    },
+    {
+      key: "fab-actions",
+      name: "FAB Actions",
+      category: "navigation",
+      description: "Floating action pattern with one main and secondary actions.",
+      promptHint: "Add a floating action button pattern."
+    },
+    {
+      key: "chip-filter",
+      name: "Chip Filter",
+      category: "input",
+      description: "Horizontal filter chip row for quick refinement.",
+      promptHint: "Add filter chips near the top content area."
+    },
+    {
+      key: "form-contact",
+      name: "Contact Form",
+      category: "input",
+      description: "Contact form block with labeled fields and submit action.",
+      promptHint: "Insert a compact contact form section."
+    },
+    {
+      key: "auth-social",
+      name: "Social Auth",
+      category: "input",
+      description: "Authentication area with social login alternatives.",
+      promptHint: "Add social sign-in options to auth screen."
+    },
+    {
+      key: "profile-header",
+      name: "Profile Header",
+      category: "content",
+      description: "Profile identity header with avatar and role metadata.",
+      promptHint: "Add a profile header with avatar and role details."
+    },
+    {
+      key: "media-card",
+      name: "Media Card",
+      category: "content",
+      description: "Content card with image, text, and action control.",
+      promptHint: "Insert media-rich card blocks."
+    },
+    {
+      key: "chart-panel",
+      name: "Chart Panel",
+      category: "data",
+      description: "Data panel with headline metric and trend blocks.",
+      promptHint: "Add a panel for analytics trends."
+    },
+    {
+      key: "commerce-product",
+      name: "Commerce Product",
+      category: "commerce",
+      description: "Product detail card with pricing and purchase action.",
+      promptHint: "Insert product cards for shopping flow."
+    },
+    {
+      key: "commerce-cart",
+      name: "Commerce Cart",
+      category: "commerce",
+      description: "Cart section with item summaries and checkout CTA.",
+      promptHint: "Add cart summary and checkout action."
+    },
+    {
+      key: "onboarding-carousel",
+      name: "Onboarding Carousel",
+      category: "content",
+      description: "Step-based onboarding slides with progress indicators.",
+      promptHint: "Insert multi-step onboarding card pattern."
     }
   ];
 
@@ -2283,6 +2388,133 @@ function buildNodeFromBlueprint(blueprintId: string): AstNode | null {
       createNode("Card", nextId("widget"), { tone: "surface", radius }, [
         createNode("Heading", nextId("heading"), { text: "Upcoming", size: "lg" }),
         createNode("Text", nextId("text"), { text: "3 scheduled tasks" })
+      ])
+    ]);
+  }
+  if (family === "appbar-standard") {
+    return createNode("Container", nextId("appbar"), { padding: "sm", tone: "surface", radius }, [
+      createNode("TopBar", nextId("topbar"), { title: `Screen ${variant}` }),
+      createNode("Tabs", nextId("tab"), { label: variant % 2 === 0 ? "Overview" : "Home" })
+    ]);
+  }
+  if (family === "appbar-search") {
+    return createNode("Stack", nextId("appbar-search"), { gap: "sm", padding: "sm" }, [
+      createNode("TopBar", nextId("topbar"), { title: "Explore" }),
+      createNode("SearchBar", nextId("search"), { placeholder: "Search here", minHeight: 44 })
+    ]);
+  }
+  if (family === "appbar-contextual") {
+    return createNode("Card", nextId("context"), { tone: "surface", radius }, [
+      createNode("Heading", nextId("heading"), { text: `${variant} items selected`, size: "lg" }),
+      createNode("Grid", nextId("grid"), { columns: 2, gap: "sm" }, [
+        createNode("Button", nextId("button"), { text: "Archive", tone: "secondary", size: "md", minHeight: 44 }),
+        createNode("Button", nextId("button"), { text: "Delete", tone: "danger", size: "md", minHeight: 44 })
+      ])
+    ]);
+  }
+  if (family === "button-stack") {
+    return createNode("Stack", nextId("button-stack"), { gap: "sm", padding: "sm" }, [
+      createNode("Button", nextId("button"), { text: "Primary Action", tone: "primary", size: "lg", minHeight: 48 }),
+      createNode("Button", nextId("button"), { text: "Secondary Action", tone: "secondary", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Tertiary Action", tone: "muted", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "button-cluster") {
+    return createNode("Grid", nextId("button-cluster"), { columns: 2, gap: "sm" }, [
+      createNode("Button", nextId("button"), { text: "Save", tone: "primary", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Share", tone: "secondary", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Preview", tone: "accent", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Delete", tone: "danger", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "fab-actions") {
+    return createNode("Stack", nextId("fab-stack"), { gap: "sm", padding: "sm" }, [
+      createNode("FloatingActionButton", nextId("fab"), { icon: "plus", tone: "primary" }),
+      createNode("FloatingActionButton", nextId("fab"), { icon: "edit", tone: "secondary" }),
+      createNode("FloatingActionButton", nextId("fab"), { icon: "share", tone: "accent" })
+    ]);
+  }
+  if (family === "chip-filter") {
+    return createNode("Card", nextId("chips"), { tone: "surface", radius: "lg" }, [
+      createNode("Heading", nextId("heading"), { text: "Filters", size: "lg" }),
+      createNode("Grid", nextId("grid"), { columns: 2, gap: "sm" }, [
+        createNode("Badge", nextId("badge"), { text: "All", tone: "primary" }),
+        createNode("Badge", nextId("badge"), { text: "Popular", tone: "accent" }),
+        createNode("Badge", nextId("badge"), { text: "Nearby", tone: "secondary" }),
+        createNode("Badge", nextId("badge"), { text: "Open now", tone: "muted" })
+      ])
+    ]);
+  }
+  if (family === "form-contact") {
+    return createNode("Form", nextId("contact"), { title: "Contact us" }, [
+      createNode("TextField", nextId("name"), { label: "Name", placeholder: "Jane Doe", minHeight: 44 }),
+      createNode("TextField", nextId("email"), { label: "Email", placeholder: "jane@company.com", minHeight: 44 }),
+      createNode("TextArea", nextId("message"), { placeholder: "Tell us your request", rows: 4 }),
+      createNode("Button", nextId("submit"), { text: "Send", tone: "primary", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "auth-social") {
+    return createNode("Stack", nextId("social-auth"), { gap: "sm", padding: "sm" }, [
+      createNode("Button", nextId("button"), { text: "Continue with Google", tone: "surface", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Continue with Apple", tone: "surface", size: "md", minHeight: 44 }),
+      createNode("Button", nextId("button"), { text: "Continue with GitHub", tone: "surface", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "profile-header") {
+    return createNode("Card", nextId("profile"), { tone: "surface", radius: "xl" }, [
+      createNode("Avatar", nextId("avatar"), { initials: "JD", size: "lg" }),
+      createNode("Heading", nextId("heading"), { text: "Jordan Doe", size: "xl" }),
+      createNode("Text", nextId("text"), { text: "Senior Product Designer" }),
+      createNode("Badge", nextId("badge"), { text: "Online", tone: "accent" })
+    ]);
+  }
+  if (family === "media-card") {
+    return createNode("Card", nextId("media"), { tone: "surface", radius }, [
+      createNode("Image", nextId("image"), { src: "https://placehold.co/640x360", alt: "Cover", height: 160 }),
+      createNode("Heading", nextId("heading"), { text: `Story ${variant}`, size: "lg" }),
+      createNode("Text", nextId("text"), { text: "A short preview of the content appears here." }),
+      createNode("Button", nextId("button"), { text: "Read", tone: "primary", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "chart-panel") {
+    return createNode("Card", nextId("chart"), { tone: "surface", radius: "lg" }, [
+      createNode("Heading", nextId("heading"), { text: "Performance", size: "xl" }),
+      createNode("Text", nextId("text"), { text: `${variant * 7}% growth this week` }),
+      createNode("Grid", nextId("grid"), { columns: 2, gap: "sm" }, [
+        createNode("Card", nextId("metric"), { tone: "muted", radius: "md" }, [createNode("Text", nextId("t"), { text: "Conversion 4.8%" })]),
+        createNode("Card", nextId("metric"), { tone: "muted", radius: "md" }, [createNode("Text", nextId("t"), { text: "Retention 87%" })])
+      ])
+    ]);
+  }
+  if (family === "commerce-product") {
+    return createNode("Card", nextId("product"), { tone: "surface", radius }, [
+      createNode("Image", nextId("image"), { src: "https://placehold.co/640x360", alt: "Product", height: 170 }),
+      createNode("Heading", nextId("heading"), { text: `Product ${variant}`, size: "lg" }),
+      createNode("Text", nextId("text"), { text: `$${29 + variant}` }),
+      createNode("Button", nextId("button"), { text: "Add to cart", tone: "primary", size: "md", minHeight: 44 })
+    ]);
+  }
+  if (family === "commerce-cart") {
+    return createNode("Card", nextId("cart"), { tone: "surface", radius: "lg" }, [
+      createNode("Heading", nextId("heading"), { text: "Cart", size: "xl" }),
+      createNode("List", nextId("list"), {}, [
+        createNode("ListItem", nextId("item"), { title: "Item A", subtitle: "$42" }),
+        createNode("ListItem", nextId("item"), { title: "Item B", subtitle: "$19" })
+      ]),
+      createNode("Button", nextId("button"), { text: "Checkout", tone: "primary", size: "lg", minHeight: 48 })
+    ]);
+  }
+  if (family === "onboarding-carousel") {
+    return createNode("Stack", nextId("onboard-carousel"), { gap: "sm", padding: "md" }, [
+      createNode("Card", nextId("step"), { tone: "surface", radius: "xl" }, [
+        createNode("Badge", nextId("badge"), { text: `Step ${Math.max(1, variant % 4)}`, tone: "primary" }),
+        createNode("Heading", nextId("heading"), { text: "Set up your workspace", size: "xl" }),
+        createNode("Text", nextId("text"), { text: "Invite teammates and configure defaults." })
+      ]),
+      createNode("Grid", nextId("dots"), { columns: 3, gap: "xs" }, [
+        createNode("Badge", nextId("dot"), { text: "1", tone: "accent" }),
+        createNode("Badge", nextId("dot"), { text: "2", tone: "muted" }),
+        createNode("Badge", nextId("dot"), { text: "3", tone: "muted" })
       ])
     ]);
   }

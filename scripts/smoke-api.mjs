@@ -48,7 +48,7 @@ async function run() {
   const templateId = result.body.templates[0].id;
 
   result = await request("/components/blueprints");
-  assert(Array.isArray(result.body.items) && result.body.items.length === 110, "Blueprint list should contain exactly 110 items.");
+  assert(Array.isArray(result.body.items) && result.body.items.length >= 110, "Blueprint list should contain at least 110 items.");
   const blueprintId = result.body.items[0]?.id;
   assert(typeof blueprintId === "string", "Blueprint list is missing id.");
 
