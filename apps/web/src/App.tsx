@@ -7,6 +7,10 @@ import { HexColorPicker } from "react-colorful";
 import { Bot, Frame, GitBranch, Mic, MonitorSmartphone, Palette, ScanSearch, Sparkles, StickyNote } from "lucide-react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import chroma from "chroma-js";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const API_URL = "http://localhost:4000";
 const STAGE_WIDTH = 5000;
@@ -125,6 +129,14 @@ interface ValidationIssue {
   message: string;
   severity: "error" | "warning";
   repairHint?: string;
+}
+
+interface AccessibilityIssue {
+  id: string;
+  impact: string;
+  description: string;
+  help: string;
+  nodes: number;
 }
 
 interface DragState {
@@ -554,6 +566,42 @@ function LayerTree({
   );
 }
 
+function SortableArtboardItem({
+  fileId,
+  name,
+  nodeCount,
+  version,
+  active,
+  onSelect
+}: {
+  fileId: string;
+  name: string;
+  nodeCount: number;
+  version: number;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: fileId });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition
+  };
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      type="button"
+      className={`artboard-item ${active ? "is-active" : ""}`}
+      onClick={onSelect}
+      {...attributes}
+      {...listeners}
+    >
+      <span className="artboard-title">{name}</span>
+      <span className="artboard-meta">Nodes {nodeCount} | V{version}</span>
+    </button>
+  );
+}
+
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -755,13 +803,17 @@ export function App() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [lintIssues, setLintIssues] = useState<ValidationIssue[]>([]);
   const [isLinting, setIsLinting] = useState(false);
+  const [accessibilityIssues, setAccessibilityIssues] = useState<AccessibilityIssue[]>([]);
+  const [isAuditingA11y, setIsAuditingA11y] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const artboardListRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
   const speechRef = useRef<BrowserSpeechRecognition | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const canvasHoverRef = useRef(false);
   const gestureScaleRef = useRef<number | null>(null);
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const phoneWidth = useMemo(() => (device === "android" ? 360 : device === "tablet" ? 768 : 390), [device]);
   const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -785,6 +837,12 @@ export function App() {
     if (!q) return artboardSummaries;
     return artboardSummaries.filter((item) => item.name.toLowerCase().includes(q) || item.fileId.toLowerCase().includes(q));
   }, [artboardSummaries, artboardSearch]);
+  const artboardVirtualizer = useVirtualizer({
+    count: filteredArtboardSummaries.length,
+    getScrollElement: () => artboardListRef.current,
+    estimateSize: () => 58,
+    overscan: 8
+  });
   const quickPrompts = useMemo(
     () => [
       "On this screen, add a search bar above cards",
@@ -1510,6 +1568,51 @@ export function App() {
     }
   }
 
+  async function runAccessibilityAudit() {
+    setIsAuditingA11y(true);
+    try {
+      const axeModule = await import("axe-core");
+      const axeRunner = axeModule.default;
+      const result = await axeRunner.run(document, {
+        runOnly: {
+          type: "tag",
+          values: ["wcag2a", "wcag2aa"]
+        }
+      });
+      const issues: AccessibilityIssue[] = result.violations.map((violation) => ({
+        id: violation.id,
+        impact: violation.impact ?? "minor",
+        description: violation.description,
+        help: violation.help,
+        nodes: violation.nodes.length
+      }));
+      setAccessibilityIssues(issues);
+      setStatus(`Accessibility audit: ${issues.length} issues.`);
+    } catch (error) {
+      setStatus(`Accessibility audit failed: ${(error as Error).message}`);
+      setAccessibilityIssues([]);
+    } finally {
+      setIsAuditingA11y(false);
+    }
+  }
+
+  function handleArtboardDragEnd(event: DragEndEvent) {
+    if (artboardSearch.trim()) {
+      setStatus("Clear artboard search before reordering.");
+      return;
+    }
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    if (!overId || activeId === overId) return;
+    setFiles((current) => {
+      const oldIndex = current.findIndex((item) => item.fileId === activeId);
+      const newIndex = current.findIndex((item) => item.fileId === overId);
+      if (oldIndex < 0 || newIndex < 0) return current;
+      return arrayMove(current, oldIndex, newIndex);
+    });
+    setStatus("Artboard order updated.");
+  }
+
   async function handleUndo() {
     if (!projectId || !activeFileId) return;
 
@@ -2159,23 +2262,43 @@ export function App() {
             <button type="button" className="mini-action" onClick={() => void addCanvasItem("phone")}>+ New</button>
           </div>
           <input className="artboard-search" value={artboardSearch} onChange={(event) => setArtboardSearch(event.target.value)} placeholder="Search artboards..." />
-          <div className="artboard-list">
-            {filteredArtboardSummaries.map((file) => (
-              <button
-                key={file.fileId}
-                type="button"
-                className={`artboard-item ${activeFileId === file.fileId ? "is-active" : ""}`}
-                onClick={() => {
-                  const phone = canvasItems.find((item) => item.type === "phone" && item.fileId === file.fileId);
-                  if (phone) {
-                    setSelectedCanvasItemId(phone.id);
-                  }
-                }}
-              >
-                <span className="artboard-title">{file.name}</span>
-                <span className="artboard-meta">Nodes {file.nodeCount} | V{file.version}</span>
-              </button>
-            ))}
+          <div className="artboard-list" ref={artboardListRef}>
+            <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleArtboardDragEnd}>
+              <SortableContext items={filteredArtboardSummaries.map((file) => file.fileId)} strategy={verticalListSortingStrategy}>
+                <div style={{ height: artboardVirtualizer.getTotalSize(), position: "relative" }}>
+                  {artboardVirtualizer.getVirtualItems().map((virtualItem) => {
+                    const file = filteredArtboardSummaries[virtualItem.index];
+                    if (!file) return null;
+                    return (
+                      <div
+                        key={file.fileId}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${virtualItem.start}px)`
+                        }}
+                      >
+                        <SortableArtboardItem
+                          fileId={file.fileId}
+                          name={file.name}
+                          nodeCount={file.nodeCount}
+                          version={file.version}
+                          active={activeFileId === file.fileId}
+                          onSelect={() => {
+                            const phone = canvasItems.find((item) => item.type === "phone" && item.fileId === file.fileId);
+                            if (phone) {
+                              setSelectedCanvasItemId(phone.id);
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
           <div className="artboard-rename-row">
             <input value={artboardRename} onChange={(event) => setArtboardRename(event.target.value)} placeholder="Rename selected artboard" />
@@ -2478,6 +2601,9 @@ export function App() {
             <button type="button" className="btn-soft" onClick={() => void runDesignLint()} disabled={isLinting}>
               {isLinting ? "Running..." : "Run Lint"}
             </button>
+            <button type="button" className="btn-soft" onClick={() => void runAccessibilityAudit()} disabled={isAuditingA11y}>
+              {isAuditingA11y ? "Auditing..." : "Run A11y Audit"}
+            </button>
             <button type="button" className="btn-primary" onClick={() => void handleRepair()}>
               Auto Fix
             </button>
@@ -2485,6 +2611,11 @@ export function App() {
               {lintIssues.slice(0, 8).map((issue) => (
                 <div key={`${issue.code}-${issue.path}`} className={`lint-item lint-${issue.severity}`}>
                   <strong>{issue.severity.toUpperCase()}</strong> {issue.message}
+                </div>
+              ))}
+              {accessibilityIssues.slice(0, 6).map((issue) => (
+                <div key={`a11y-${issue.id}`} className={`lint-item lint-${issue.impact === "critical" || issue.impact === "serious" ? "error" : "warning"}`}>
+                  <strong>A11Y {issue.impact.toUpperCase()}</strong> {issue.help} ({issue.nodes})
                 </div>
               ))}
             </div>

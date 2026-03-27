@@ -333,6 +333,8 @@ body {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 12px;
+  max-height: 260px;
+  overflow: auto;
 }
 
 .artboard-search {
@@ -373,6 +375,11 @@ body {
   min-height: 46px;
   padding: 7px 9px;
   border-radius: 10px;
+  cursor: grab;
+}
+
+.artboard-item:active {
+  cursor: grabbing;
 }
 
 .artboard-item.is-active {
