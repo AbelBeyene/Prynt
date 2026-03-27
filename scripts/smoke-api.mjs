@@ -1,5 +1,8 @@
+import { spawn } from "node:child_process";
+
 const base = process.env.PRYNT_API_URL || "http://localhost:4000";
 const pid = `project-smoke-${Date.now()}`;
+let apiProcess = null;
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -22,7 +25,49 @@ function assert(condition, message) {
   }
 }
 
+function isLocalBaseUrl(url) {
+  return url.startsWith("http://localhost:") || url.startsWith("http://127.0.0.1:");
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function canReachApi() {
+  try {
+    const result = await request("/projects");
+    return result.response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureApiReady() {
+  if (await canReachApi()) return;
+  if (!isLocalBaseUrl(base) || process.env.PRYNT_SMOKE_NO_SPAWN === "1") {
+    throw new Error(`API is not reachable at ${base}`);
+  }
+
+  apiProcess = spawn("npm", ["run", "dev", "--workspace", "@prynt/api"], {
+    stdio: "ignore",
+    detached: false
+  });
+
+  const retries = 50;
+  for (let i = 0; i < retries; i += 1) {
+    if (await canReachApi()) return;
+    await sleep(250);
+  }
+  throw new Error(`API did not become ready at ${base}`);
+}
+
+function shutdownApiProcess() {
+  if (!apiProcess) return;
+  apiProcess.kill("SIGTERM");
+}
+
 async function run() {
+  await ensureApiReady();
   let result;
 
   result = await request("/projects");
@@ -124,7 +169,17 @@ async function run() {
   console.log(`SMOKE_OK ${pid}`);
 }
 
-run().catch((error) => {
-  console.error(`SMOKE_FAIL ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
+run()
+  .catch((error) => {
+    console.error(`SMOKE_FAIL ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    shutdownApiProcess();
+  });
+
+process.on("exit", shutdownApiProcess);
+process.on("SIGINT", () => {
+  shutdownApiProcess();
+  process.exit(130);
 });

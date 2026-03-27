@@ -8,13 +8,18 @@ import { Bot, Frame, GitBranch, Mic, MonitorSmartphone, Palette, ScanSearch, Spa
 import * as Tooltip from "@radix-ui/react-tooltip";
 import chroma from "chroma-js";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { apiRequest as apiRequestBase } from "./services/api.js";
+import { LayerTree, SortableArtboardItem } from "./editor/layer-components.js";
 
 const API_URL = "http://localhost:4000";
 const STAGE_WIDTH = 5000;
 const STAGE_HEIGHT = 3200;
+
+async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  return apiRequestBase<T>(API_URL, path, options);
+}
 
 type DevicePreset = "iphone" | "android" | "tablet";
 type InspectorMode = "props" | "source" | "patch";
@@ -539,76 +544,6 @@ function renderNode(node: AstNode, selectedIds: Set<string>, onSelect: (id: stri
       {node.children.map((child) => renderNode(child, selectedIds, onSelect))}
     </div>
   );
-}
-
-function LayerTree({
-  node,
-  selectedIds,
-  onSelect,
-  visibleIds
-}: {
-  node: AstNode;
-  selectedIds: Set<string>;
-  onSelect: (id: string, additive: boolean) => void;
-  visibleIds: Set<string>;
-}) {
-  if (!visibleIds.has(node.id)) return null;
-
-  return (
-    <div className="layer-item">
-      <button type="button" className={selectedIds.has(node.id) ? "layer-selected" : ""} onClick={(event) => onSelect(node.id, event.shiftKey)}>
-        {node.type} ({node.id})
-      </button>
-      <div className="layer-children">
-        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedIds={selectedIds} onSelect={onSelect} visibleIds={visibleIds} />)}
-      </div>
-    </div>
-  );
-}
-
-function SortableArtboardItem({
-  fileId,
-  name,
-  nodeCount,
-  version,
-  active,
-  onSelect
-}: {
-  fileId: string;
-  name: string;
-  nodeCount: number;
-  version: number;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: fileId });
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition
-  };
-  return (
-    <button
-      ref={setNodeRef}
-      style={style}
-      type="button"
-      className={`artboard-item ${active ? "is-active" : ""}`}
-      onClick={onSelect}
-      {...attributes}
-      {...listeners}
-    >
-      <span className="artboard-title">{name}</span>
-      <span className="artboard-meta">Nodes {nodeCount} | V{version}</span>
-    </button>
-  );
-}
-
-async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options
-  });
-  if (!response.ok) throw new Error(await response.text());
-  return (await response.json()) as T;
 }
 
 function clampZoom(value: number): number {
