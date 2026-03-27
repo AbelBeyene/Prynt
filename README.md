@@ -18,6 +18,7 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Prompt simulation preview across one or many screens.
 - Prompt simulation preview with accept/reject workflow and diff summary on the canvas.
 - Batch prompt apply for multi-selected nodes in one request.
+- Prompt dock upgrades: voice input, persistent design brief context, variant generation, next-screen flow generation, and critique suggestions.
 - Version history with restore.
 - Undo/redo.
 - Artboard lifecycle operations (create, rename, duplicate, delete).

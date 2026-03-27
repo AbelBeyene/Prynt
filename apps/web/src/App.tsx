@@ -4,7 +4,7 @@ import { serializeDocumentToDsl } from "@prynt/dsl";
 import type { PatchOp } from "@prynt/patches";
 import { Command } from "cmdk";
 import { HexColorPicker } from "react-colorful";
-import { Bot, Frame, MonitorSmartphone, Palette, ScanSearch, Sparkles, StickyNote } from "lucide-react";
+import { Bot, Frame, GitBranch, Mic, MonitorSmartphone, Palette, ScanSearch, Sparkles, StickyNote } from "lucide-react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import chroma from "chroma-js";
 
@@ -135,6 +135,17 @@ interface DragState {
   startScrollTop?: number;
   itemId?: string;
 }
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
 function parseValue(value: string): unknown {
   if (value === "true") return true;
@@ -655,6 +666,29 @@ function buildThemeFromAccent(accent: string) {
   return { accent, accent2, panel, canvas };
 }
 
+function buildPromptWithBrief(basePrompt: string, designBrief: string): string {
+  const brief = designBrief.trim();
+  if (!brief) return basePrompt.trim();
+  return `${basePrompt.trim()}\n\nDesign brief: ${brief}`;
+}
+
+function generateCritiqueSuggestions(document: DocumentAst | null): string[] {
+  if (!document) return [];
+  const nodes = flatten(document.root);
+  const buttons = nodes.filter((node) => node.type === "Button").length;
+  const headings = nodes.filter((node) => node.type === "Heading").length;
+  const cards = nodes.filter((node) => node.type === "Card").length;
+  const forms = nodes.filter((node) => node.type === "Form" || node.type === "TextField").length;
+  const suggestions: string[] = [];
+  if (headings === 0) suggestions.push("Add at least one clear heading to improve hierarchy.");
+  if (buttons === 0) suggestions.push("Add one primary action button to clarify user intent.");
+  if (buttons > 4) suggestions.push("Reduce visible actions; too many buttons can hurt decision clarity.");
+  if (cards === 0 && forms === 0) suggestions.push("Group content into cards or form sections for better scanability.");
+  if (nodes.length > 90) suggestions.push("Screen is dense; consider splitting into multiple screens or collapsible sections.");
+  if (suggestions.length === 0) suggestions.push("Layout quality looks solid. Consider refining spacing rhythm for premium feel.");
+  return suggestions;
+}
+
 export function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [availableProjects, setAvailableProjects] = useState<ProjectSummary[]>([]);
@@ -690,6 +724,10 @@ export function App() {
   const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
   const [isRefreshingPromptLibrary, setIsRefreshingPromptLibrary] = useState(false);
+  const [designBrief, setDesignBrief] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [critiqueSuggestions, setCritiqueSuggestions] = useState<string[]>([]);
+  const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
   const [templates, setTemplates] = useState<TemplateDefinition[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("mobile-dashboard");
   const [blueprintQuery, setBlueprintQuery] = useState("");
@@ -718,6 +756,7 @@ export function App() {
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
+  const speechRef = useRef<BrowserSpeechRecognition | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const canvasHoverRef = useRef(false);
   const gestureScaleRef = useRef<number | null>(null);
@@ -803,12 +842,15 @@ export function App() {
       { id: "insert-section", label: "Insert Saved Section", icon: Frame, action: () => void insertSelectedSection() },
       { id: "apply-template", label: "Apply Selected Template", icon: Sparkles, action: () => void applySelectedTemplate() },
       { id: "export", label: "Export Active File", icon: Palette, action: () => void exportActiveFile() },
+      { id: "variants", label: "Generate Variants", icon: GitBranch, action: () => void generatePromptVariants() },
+      { id: "next-screen", label: "Generate Next Screen", icon: MonitorSmartphone, action: () => void generateNextScreenFlow() },
+      { id: "voice", label: "Voice Prompt", icon: Mic, action: () => toggleVoicePrompt() },
       { id: "theme-teal", label: "Theme: Teal", icon: Palette, action: () => applyThemePreset("teal") },
       { id: "theme-violet", label: "Theme: Violet", icon: Palette, action: () => applyThemePreset("violet") },
       { id: "theme-amber", label: "Theme: Amber", icon: Palette, action: () => applyThemePreset("amber") },
       { id: "theme-mono", label: "Theme: Mono", icon: Palette, action: () => applyThemePreset("mono") }
     ],
-    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset, duplicateActiveArtboard, applySelectedTemplate, exportActiveFile, selectedSectionId, sectionsLibrary, selectedId]
+    [handlePrompt, handleSimulatePrompt, fitToViewport, applyThemePreset, duplicateActiveArtboard, applySelectedTemplate, exportActiveFile, selectedSectionId, sectionsLibrary, selectedId, isListening]
   );
 
   useEffect(() => {
@@ -855,6 +897,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const raw = localStorage.getItem("prynt-design-brief");
+    if (!raw) return;
+    setDesignBrief(raw);
+  }, []);
+
+  useEffect(() => {
     const raw = localStorage.getItem("prynt-style-presets");
     if (!raw) return;
     try {
@@ -883,6 +931,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("prynt-sections-library", JSON.stringify(sectionsLibrary.slice(0, 100)));
   }, [sectionsLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem("prynt-design-brief", designBrief.slice(0, 4000));
+  }, [designBrief]);
 
   useEffect(() => {
     localStorage.setItem("prynt-style-presets", JSON.stringify(stylePresets.slice(0, 40)));
@@ -1147,11 +1199,12 @@ export function App() {
       return;
     }
 
-    const trimmedPrompt = (overridePrompt ?? prompt).trim();
-    if (!trimmedPrompt) {
+    const rawPrompt = (overridePrompt ?? prompt).trim();
+    if (!rawPrompt) {
       setStatus("Type a prompt before applying.");
       return;
     }
+    const finalPrompt = buildPromptWithBrief(rawPrompt, designBrief);
 
     setIsApplyingPrompt(true);
     setStatus("Applying prompt...");
@@ -1166,7 +1219,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           fileId: activeFileId,
-          prompt: trimmedPrompt,
+          prompt: finalPrompt,
           selectedNodeId: options?.selectedNodeId ?? selectedId ?? undefined,
           selectedScope: options?.selectedScope
         })
@@ -1197,6 +1250,7 @@ export function App() {
       );
       await refreshVersions(projectId, response.response.fileId);
       await refreshPromptLibrary(projectId, response.response.fileId, promptLibraryQuery);
+      setCritiqueSuggestions(generateCritiqueSuggestions(response.response.document));
     } catch (error) {
       setStatus(`Prompt failed: ${(error as Error).message}`);
     } finally {
@@ -1218,11 +1272,12 @@ export function App() {
       return;
     }
 
-    const trimmedPrompt = (overridePrompt ?? prompt).trim();
-    if (!trimmedPrompt) {
+    const rawPrompt = (overridePrompt ?? prompt).trim();
+    if (!rawPrompt) {
       setStatus("Type a prompt before simulating.");
       return;
     }
+    const finalPrompt = buildPromptWithBrief(rawPrompt, designBrief);
 
     setIsSimulatingPrompt(true);
     setStatus("Simulating prompt...");
@@ -1234,7 +1289,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           fileId: activeFileId,
-          prompt: trimmedPrompt,
+          prompt: finalPrompt,
           selectedNodeId: options?.selectedNodeId ?? selectedId ?? undefined,
           selectedScope: options?.selectedScope
         })
@@ -1250,7 +1305,7 @@ export function App() {
       const selectedNodeId = options?.selectedNodeId ?? selectedId ?? undefined;
       const selectedScope = options?.selectedScope;
       setPendingPromptPreview({
-        prompt: trimmedPrompt,
+        prompt: finalPrompt,
         ...(selectedNodeId ? { selectedNodeId } : {}),
         ...(selectedScope ? { selectedScope } : {}),
         summary: `${okCount}/${response.results.length} screen(s) valid`
@@ -1284,7 +1339,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           fileId: activeFileId,
-          prompt: text,
+          prompt: buildPromptWithBrief(text, designBrief),
           selectedNodeIds: selectedIds,
           selectedScope: "node"
         })
@@ -1298,6 +1353,105 @@ export function App() {
     } finally {
       setIsApplyingPrompt(false);
     }
+  }
+
+  function toggleVoicePrompt() {
+    if (isListening && speechRef.current) {
+      speechRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+    const SpeechCtor = (window as unknown as { SpeechRecognition?: new () => BrowserSpeechRecognition; webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).SpeechRecognition
+      ?? (window as unknown as { webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).webkitSpeechRecognition;
+    if (!SpeechCtor) {
+      setStatus("Voice input is not supported in this browser.");
+      return;
+    }
+    const recognition = new SpeechCtor();
+    speechRef.current = recognition;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      const first = event.results[0];
+      const transcript = first && first[0] ? first[0].transcript : "";
+      if (transcript.trim()) {
+        setPrompt((current) => (current.trim() ? `${current.trim()} ${transcript.trim()}` : transcript.trim()));
+      }
+    };
+    recognition.onerror = (event) => {
+      setStatus(`Voice input error: ${event.error}`);
+      setIsListening(false);
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    setIsListening(true);
+    recognition.start();
+  }
+
+  async function generatePromptVariants() {
+    if (!projectId || !activeFileId || !activeFile) return;
+    const basePrompt = prompt.trim();
+    if (!basePrompt) {
+      setStatus("Type a base prompt first.");
+      return;
+    }
+    const variantStyles = ["minimal", "enterprise", "glassmorphism"];
+    setIsGeneratingVariants(true);
+    try {
+      for (const style of variantStyles) {
+        const file = await apiRequest<ProjectFile>(`/projects/${projectId}/files`, {
+          method: "POST",
+          body: JSON.stringify({ name: `${activeFile.name} ${style}`, baseFileId: activeFileId })
+        });
+        setFiles((current) => [...current, file]);
+        const id = uid("phone");
+        setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1680 + Math.random() * 220, y: 420 + Math.random() * 140, width: phoneWidth, height: 760 }]);
+        await apiRequest(`/projects/${projectId}/prompt`, {
+          method: "POST",
+          body: JSON.stringify({
+            fileId: file.fileId,
+            prompt: buildPromptWithBrief(`${basePrompt}. Style direction: ${style}.`, designBrief)
+          })
+        });
+      }
+      setStatus("Generated prompt style variants.");
+    } catch (error) {
+      setStatus(`Variant generation failed: ${(error as Error).message}`);
+    } finally {
+      setIsGeneratingVariants(false);
+    }
+  }
+
+  async function generateNextScreenFlow() {
+    if (!projectId || !activeFileId || !activeFile) return;
+    try {
+      const file = await apiRequest<ProjectFile>(`/projects/${projectId}/files`, {
+        method: "POST",
+        body: JSON.stringify({ name: `${activeFile.name} Next`, baseFileId: activeFileId })
+      });
+      setFiles((current) => [...current, file]);
+      const id = uid("phone");
+      setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1760, y: 460, width: phoneWidth, height: 760 }]);
+      await apiRequest(`/projects/${projectId}/prompt`, {
+        method: "POST",
+        body: JSON.stringify({
+          fileId: file.fileId,
+          prompt: buildPromptWithBrief(`Create the next logical user-flow screen after '${activeFile.name}'. Keep navigation continuity.`, designBrief)
+        })
+      });
+      setSelectedCanvasItemId(id);
+      setStatus("Generated next-screen flow.");
+    } catch (error) {
+      setStatus(`Next-screen generation failed: ${(error as Error).message}`);
+    }
+  }
+
+  function runCritiqueCoach() {
+    const suggestions = generateCritiqueSuggestions(activeDocument);
+    setCritiqueSuggestions(suggestions);
+    setStatus("Design critique generated.");
   }
 
   function selectSimilarNodes() {
@@ -2317,8 +2471,22 @@ export function App() {
       <section className="prompt-dock">
         <div className="prompt-dock-head">
           <span>Prompt Assistant</span>
-          <span>Confidence: {promptConfidence !== null ? `${Math.round(promptConfidence * 100)}%` : "n/a"}</span>
+          <div className="prompt-head-actions">
+            <span>Confidence: {promptConfidence !== null ? `${Math.round(promptConfidence * 100)}%` : "n/a"}</span>
+            <button type="button" onClick={() => toggleVoicePrompt()}>{isListening ? "Stop Voice" : "Voice"}</button>
+            <button type="button" onClick={() => void generatePromptVariants()} disabled={isGeneratingVariants}>
+              {isGeneratingVariants ? "Variants..." : "Variants"}
+            </button>
+            <button type="button" onClick={() => void generateNextScreenFlow()}>Next Screen</button>
+            <button type="button" onClick={() => runCritiqueCoach()}>Critique</button>
+          </div>
         </div>
+        <textarea
+          className="brief-box"
+          value={designBrief}
+          onChange={(event) => setDesignBrief(event.target.value)}
+          placeholder="Design brief context (product goals, audience, style, constraints)..."
+        />
         <div className="prompt-dock-main">
           <input
             ref={promptInputRef}
@@ -2371,6 +2539,11 @@ export function App() {
             ? promptWarnings.join(" | ")
             : lastPromptSummary || "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
+        {critiqueSuggestions.length > 0 ? (
+          <div className="critique-list">
+            {critiqueSuggestions.slice(0, 4).map((item) => <div key={item}>{item}</div>)}
+          </div>
+        ) : null}
         {pendingPromptPreview ? (
           <div className="preview-block">
             <div className="preview-actions">

@@ -1,7 +1,7 @@
 :root {
   --topbar-h: 48px;
   --tools-h: 42px;
-  --prompt-dock-h: 212px;
+  --prompt-dock-h: 286px;
   --footer-h: 24px;
   --left-panel-w: 280px;
   --right-panel-w: 292px;
@@ -1100,6 +1100,22 @@ body {
   color: var(--muted);
 }
 
+.prompt-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-head-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #1f2b40, #192337);
+  color: #dce7ff;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
 .prompt-dock-head {
   color: var(--ink-dim);
 }
@@ -1128,6 +1144,34 @@ body {
   padding: 8px 12px;
   height: 34px;
   cursor: pointer;
+}
+
+.brief-box {
+  width: 100%;
+  min-height: 52px;
+  max-height: 80px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #172131, #131b2a);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.critique-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #d6e1f8;
+  background: rgba(13, 19, 31, 0.78);
+  display: grid;
+  gap: 4px;
+  max-height: 82px;
+  overflow: auto;
 }
 
 .preview-actions {
