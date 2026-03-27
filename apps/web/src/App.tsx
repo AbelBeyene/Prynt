@@ -15,6 +15,7 @@ const STAGE_HEIGHT = 3200;
 type DevicePreset = "iphone" | "android" | "tablet";
 type InspectorMode = "props" | "source" | "patch";
 type ThemeColorTarget = "accent" | "accent2" | "panel" | "canvas";
+type UiVisualMode = "pro" | "glass";
 
 type CanvasItemType = "phone" | "note" | "frame";
 
@@ -631,6 +632,7 @@ export function App() {
   const [uiAccent2, setUiAccent2] = useState("#60a5fa");
   const [uiPanelTone, setUiPanelTone] = useState("#151b27");
   const [canvasTone, setCanvasTone] = useState("#0e1420");
+  const [uiVisualMode, setUiVisualMode] = useState<UiVisualMode>("pro");
   const [themeColorTarget, setThemeColorTarget] = useState<ThemeColorTarget>("accent");
   const [device, setDevice] = useState<DevicePreset>("iphone");
   const [status, setStatus] = useState("Ready");
@@ -770,12 +772,14 @@ export function App() {
         panel?: string;
         canvas?: string;
         device?: DevicePreset;
+        visualMode?: UiVisualMode;
       };
       if (parsed.accent) setUiAccent(parsed.accent);
       if (parsed.accent2) setUiAccent2(parsed.accent2);
       if (parsed.panel) setUiPanelTone(parsed.panel);
       if (parsed.canvas) setCanvasTone(parsed.canvas);
       if (parsed.device) setDevice(parsed.device);
+      if (parsed.visualMode) setUiVisualMode(parsed.visualMode);
     } catch {
       // ignore invalid persisted state
     }
@@ -803,10 +807,11 @@ export function App() {
         accent2: uiAccent2,
         panel: uiPanelTone,
         canvas: canvasTone,
-        device
+        device,
+        visualMode: uiVisualMode
       })
     );
-  }, [uiAccent, uiAccent2, uiPanelTone, canvasTone, device]);
+  }, [uiAccent, uiAccent2, uiPanelTone, canvasTone, device, uiVisualMode]);
 
   useEffect(() => {
     localStorage.setItem("prynt-sections-library", JSON.stringify(sectionsLibrary.slice(0, 100)));
@@ -1691,7 +1696,7 @@ export function App() {
   if (!activeDocument) return <div className="loading">Loading project...</div>;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${uiVisualMode === "glass" ? "theme-glass" : ""}`}>
       <header className="topbar-app">
         <h1>Prynt Prompt-Native UX Editor</h1>
         <p>{status}</p>
@@ -1711,6 +1716,9 @@ export function App() {
           <button type="button" onClick={() => void applySelectedTemplate()}>Apply Template</button>
         </div>
         <div className="workspace-tools-right">
+          <button type="button" onClick={() => setUiVisualMode((mode) => (mode === "glass" ? "pro" : "glass"))}>
+            {uiVisualMode === "glass" ? "Pro Mode" : "Glass Mode"}
+          </button>
           <button type="button" onClick={() => setIsCommandOpen(true)}>Command</button>
           <select value={projectSwitcherId} onChange={(event) => setProjectSwitcherId(event.target.value)}>
             <option value="">Select Project</option>
