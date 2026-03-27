@@ -1104,6 +1104,51 @@ body {
   cursor: pointer;
 }
 
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.preview-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 11px;
+  background: linear-gradient(180deg, #223553, #1b2c45);
+  color: #e5eeff;
+  cursor: pointer;
+}
+
+.lint-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  max-height: 130px;
+  overflow: auto;
+}
+
+.lint-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  background: #111927;
+}
+
+.lint-warning {
+  border-color: #8b5e1f;
+  color: #fde68a;
+}
+
+.lint-error {
+  border-color: #7f1d1d;
+  color: #fecdd3;
+}
+
 .prompt-dock-main button:last-child {
   background: linear-gradient(120deg, #1e40af, #2563eb);
   border-color: #1d4ed8;

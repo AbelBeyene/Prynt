@@ -113,6 +113,14 @@ interface ContextPromptState {
   scope: "node" | "section" | "similar" | "screen" | "project";
 }
 
+interface ValidationIssue {
+  code: string;
+  path: string;
+  message: string;
+  severity: "error" | "warning";
+  repairHint?: string;
+}
+
 interface DragState {
   mode: "pan" | "item";
   startX: number;
@@ -209,13 +217,13 @@ function collectVisibleLayerIds(root: AstNode, query: string): Set<string> {
   return visible;
 }
 
-function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: string) => void): JSX.Element {
-  const selected = selectedId === node.id;
+function renderNode(node: AstNode, selectedIds: Set<string>, onSelect: (id: string, additive: boolean) => void): JSX.Element {
+  const selected = selectedIds.has(node.id);
   const className = `node node-${node.type.toLowerCase()}${selected ? " selected" : ""}`;
 
   const onClick: MouseEventHandler = (event) => {
     event.stopPropagation();
-    onSelect(node.id);
+    onSelect(node.id, event.shiftKey);
   };
 
   if (node.type === "Heading") {
@@ -410,12 +418,12 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
       <div key={node.id} data-node-id={node.id} className={`${className} widget-placeholder`} onClick={onClick}>
         <strong>{node.type}</strong>
         <small>{Object.entries(node.props).map(([key, value]) => `${key}:${String(value)}`).join(" | ")}</small>
-        {node.children.map((child) => renderNode(child, selectedId, onSelect))}
+        {node.children.map((child) => renderNode(child, selectedIds, onSelect))}
       </div>
     );
   }
   if (node.type === "List") {
-    return <ul key={node.id} data-node-id={node.id} className={className} onClick={onClick}>{node.children.map((child) => renderNode(child, selectedId, onSelect))}</ul>;
+    return <ul key={node.id} data-node-id={node.id} className={className} onClick={onClick}>{node.children.map((child) => renderNode(child, selectedIds, onSelect))}</ul>;
   }
   if (node.type === "ListItem") {
     return (
@@ -445,7 +453,7 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
       <div key={node.id} data-node-id={node.id} className={`${className} modal-shell`} onClick={onClick}>
         <div className="modal-card">
           <strong>{String(node.props.title ?? "Modal")}</strong>
-          {node.children.map((child) => renderNode(child, selectedId, onSelect))}
+          {node.children.map((child) => renderNode(child, selectedIds, onSelect))}
         </div>
       </div>
     );
@@ -474,31 +482,31 @@ function renderNode(node: AstNode, selectedId: string | null, onSelect: (id: str
   return (
     <div key={node.id} data-node-id={node.id} className={`${className} ${containerType} ${toneClass(node.props.tone)}`} onClick={onClick} style={customStyle}>
       {node.type !== "Screen" && node.type !== "ScrollView" ? <div className="node-label">{node.type}</div> : null}
-      {node.children.map((child) => renderNode(child, selectedId, onSelect))}
+      {node.children.map((child) => renderNode(child, selectedIds, onSelect))}
     </div>
   );
 }
 
 function LayerTree({
   node,
-  selectedId,
+  selectedIds,
   onSelect,
   visibleIds
 }: {
   node: AstNode;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedIds: Set<string>;
+  onSelect: (id: string, additive: boolean) => void;
   visibleIds: Set<string>;
 }) {
   if (!visibleIds.has(node.id)) return null;
 
   return (
     <div className="layer-item">
-      <button type="button" className={selectedId === node.id ? "layer-selected" : ""} onClick={() => onSelect(node.id)}>
+      <button type="button" className={selectedIds.has(node.id) ? "layer-selected" : ""} onClick={(event) => onSelect(node.id, event.shiftKey)}>
         {node.type} ({node.id})
       </button>
       <div className="layer-children">
-        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} visibleIds={visibleIds} />)}
+        {node.children.map((child) => <LayerTree key={child.id} node={child} selectedIds={selectedIds} onSelect={onSelect} visibleIds={visibleIds} />)}
       </div>
     </div>
   );
@@ -622,9 +630,16 @@ export function App() {
   const [projectSwitcherId, setProjectSwitcherId] = useState("");
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [prompt, setPrompt] = useState("Create a modern mobile dashboard");
   const [isApplyingPrompt, setIsApplyingPrompt] = useState(false);
   const [isSimulatingPrompt, setIsSimulatingPrompt] = useState(false);
+  const [pendingPromptPreview, setPendingPromptPreview] = useState<{
+    prompt: string;
+    selectedNodeId?: string;
+    selectedScope?: "node" | "section" | "similar" | "screen" | "project";
+    summary: string;
+  } | null>(null);
   const [artboardSearch, setArtboardSearch] = useState("");
   const [layerSearch, setLayerSearch] = useState("");
   const [artboardRename, setArtboardRename] = useState("");
@@ -665,6 +680,8 @@ export function App() {
   const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>("phone-main");
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [lintIssues, setLintIssues] = useState<ValidationIssue[]>([]);
+  const [isLinting, setIsLinting] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
@@ -673,6 +690,7 @@ export function App() {
   const gestureScaleRef = useRef<number | null>(null);
 
   const phoneWidth = useMemo(() => (device === "android" ? 360 : device === "tablet" ? 768 : 390), [device]);
+  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const selectedCanvasItem = useMemo(() => canvasItems.find((item) => item.id === selectedCanvasItemId) ?? null, [canvasItems, selectedCanvasItemId]);
   const activeFileId = selectedCanvasItem?.type === "phone" && selectedCanvasItem.fileId ? selectedCanvasItem.fileId : files[0]?.fileId;
@@ -825,6 +843,28 @@ export function App() {
     root.style.setProperty("--canvas-tone", canvasTone);
   }, [uiAccent, uiAccent2, uiPanelTone, canvasTone]);
 
+  function setPrimarySelection(id: string | null) {
+    setSelectedId(id);
+    setSelectedIds(id ? [id] : []);
+  }
+
+  function handleNodeSelect(id: string, additive: boolean) {
+    if (!additive) {
+      setSelectedId(id);
+      setSelectedIds([id]);
+      return;
+    }
+    setSelectedId(id);
+    setSelectedIds((current) => {
+      const has = current.includes(id);
+      if (has) {
+        const next = current.filter((item) => item !== id);
+        return next.length > 0 ? next : [id];
+      }
+      return [...current, id];
+    });
+  }
+
   function patchFileDocument(fileId: string, document: DocumentAst) {
     setFiles((current) => current.map((file) => (file.fileId === fileId ? { ...file, document } : file)));
   }
@@ -916,7 +956,7 @@ export function App() {
     }));
     setCanvasItems(phones);
     setSelectedCanvasItemId(phones[0]?.id ?? null);
-    setSelectedId(created.files[0]?.document.root.id ?? null);
+    setPrimarySelection(created.files[0]?.document.root.id ?? null);
 
     if (created.files[0]) {
       await refreshVersions(created.projectId, created.files[0].fileId);
@@ -1001,7 +1041,7 @@ export function App() {
     if (!projectId || !activeFileId) return;
     void refreshVersions(projectId, activeFileId);
     const rootId = activeFile?.document.root.id;
-    if (rootId) setSelectedId(rootId);
+    if (rootId) setPrimarySelection(rootId);
   }, [projectId, activeFileId]);
 
   useEffect(() => {
@@ -1089,6 +1129,7 @@ export function App() {
         }
       }
       setPreviewDocument(null);
+      setPendingPromptPreview(null);
       setPromptConfidence(response.intent.confidence);
       setPromptWarnings(response.intent.warnings);
       setLastPromptSummary(
@@ -1135,7 +1176,7 @@ export function App() {
     try {
       const response = await apiRequest<{
         intent: IntentSpec;
-        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { applied: boolean; warnings: string[] } }>;
+        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { applied: boolean; warnings: string[]; document: DocumentAst } }>;
       }>(`/projects/${projectId}/prompt/simulate`, {
         method: "POST",
         body: JSON.stringify({
@@ -1149,11 +1190,83 @@ export function App() {
       setPromptConfidence(response.intent.confidence);
       setPromptWarnings(response.intent.warnings);
       const okCount = response.results.filter((result) => result.response.applied).length;
+      const activePreview = response.results.find((result) => result.fileId === activeFileId) ?? response.results[0];
+      if (activePreview) {
+        setPreviewDocument(activePreview.response.document);
+      }
+      const selectedNodeId = options?.selectedNodeId ?? selectedId ?? undefined;
+      const selectedScope = options?.selectedScope;
+      setPendingPromptPreview({
+        prompt: trimmedPrompt,
+        ...(selectedNodeId ? { selectedNodeId } : {}),
+        ...(selectedScope ? { selectedScope } : {}),
+        summary: `${okCount}/${response.results.length} screen(s) valid`
+      });
       setStatus(`Simulation ready: ${okCount}/${response.results.length} screen(s) valid`);
     } catch (error) {
       setStatus(`Simulation failed: ${(error as Error).message}`);
     } finally {
       setIsSimulatingPrompt(false);
+    }
+  }
+
+  async function applyPromptToSelectedNodes() {
+    if (selectedIds.length === 0) {
+      setStatus("Select one or more nodes first.");
+      return;
+    }
+    const text = prompt.trim();
+    if (!text) {
+      setStatus("Type a prompt first.");
+      return;
+    }
+    setIsApplyingPrompt(true);
+    let applied = 0;
+    try {
+      for (const nodeId of selectedIds) {
+        try {
+          await handlePrompt(text, { selectedNodeId: nodeId, selectedScope: "node" });
+          applied += 1;
+        } catch {
+          // continue batch apply
+        }
+      }
+      setStatus(`Applied prompt to ${applied}/${selectedIds.length} selected nodes.`);
+    } finally {
+      setIsApplyingPrompt(false);
+    }
+  }
+
+  function selectSimilarNodes() {
+    if (!activeDocument || !selectedNode) {
+      setStatus("Select a node first.");
+      return;
+    }
+    const nodes = flatten(activeDocument.root).filter((node) => node.type === selectedNode.type).map((node) => node.id);
+    setSelectedIds(nodes);
+    if (nodes[0]) {
+      setSelectedId(nodes[0]);
+    }
+    setStatus(`Selected ${nodes.length} ${selectedNode.type} nodes.`);
+  }
+
+  async function runDesignLint() {
+    if (!projectId || !activeDocument) return;
+    setIsLinting(true);
+    try {
+      const response = await apiRequest<{ issues: ValidationIssue[]; suggestions: string[] }>(`/projects/${projectId}/repair/suggest`, {
+        method: "POST",
+        body: JSON.stringify({ document: activeDocument })
+      });
+      setLintIssues(response.issues);
+      const errorCount = response.issues.filter((issue) => issue.severity === "error").length;
+      const warningCount = response.issues.filter((issue) => issue.severity === "warning").length;
+      setStatus(`Lint complete: ${errorCount} errors, ${warningCount} warnings.`);
+    } catch (error) {
+      setStatus(`Lint failed: ${(error as Error).message}`);
+      setLintIssues([]);
+    } finally {
+      setIsLinting(false);
     }
   }
 
@@ -1207,7 +1320,7 @@ export function App() {
   async function removeSelected() {
     if (!selectedId || !activeDocument || selectedId === activeDocument.root.id) return;
     await applyPatch([{ opId: uid("remove"), type: "removeNode", targetId: selectedId }], "Remove node");
-    setSelectedId(activeDocument.root.id);
+    setPrimarySelection(activeDocument.root.id);
   }
 
   async function duplicateSelected() {
@@ -1224,7 +1337,7 @@ export function App() {
     }
     const clone = cloneNodeWithNewIds(source);
     await applyPatch([{ opId: uid("duplicate"), type: "addNode", parentId, node: clone }], `Duplicate ${source.type}`);
-    setSelectedId(clone.id);
+    setPrimarySelection(clone.id);
   }
 
   function saveSelectedAsSection() {
@@ -1314,7 +1427,7 @@ export function App() {
       setFiles((current) => [...current, file]);
       setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1540, y: 420, width: phoneWidth, height: 760 }]);
       setSelectedCanvasItemId(id);
-      setSelectedId(file.document.root.id);
+      setPrimarySelection(file.document.root.id);
       await refreshVersions(projectId, file.fileId);
       setStatus(`Duplicated artboard: ${file.name}`);
     } catch (error) {
@@ -1355,7 +1468,7 @@ export function App() {
         body: JSON.stringify({ fileId: activeFileId, templateId: selectedTemplateId })
       });
       patchFileDocument(file.fileId, file.document);
-      setSelectedId(file.document.root.id);
+      setPrimarySelection(file.document.root.id);
       setStatus(`Applied template: ${selectedTemplateId}`);
       await refreshVersions(projectId, file.fileId);
     } catch (error) {
@@ -1441,7 +1554,7 @@ export function App() {
       const id = uid("phone");
       setCanvasItems((current) => [...current, { id, type: "phone", fileId: file.fileId, x: 1400, y: 420, width: phoneWidth, height: 760 }]);
       setSelectedCanvasItemId(id);
-      setSelectedId(file.document.root.id);
+      setPrimarySelection(file.document.root.id);
       await refreshVersions(projectId, file.fileId);
       setStatus(`Created new artboard: ${file.name}`);
       return;
@@ -1786,7 +1899,7 @@ export function App() {
             <h2>Layers</h2>
           </div>
           <input className="artboard-search" value={layerSearch} onChange={(event) => setLayerSearch(event.target.value)} placeholder="Search layers..." />
-          <LayerTree node={activeDocument.root} selectedId={selectedId} onSelect={setSelectedId} visibleIds={visibleLayerIds} />
+          <LayerTree node={activeDocument.root} selectedIds={selectedIdsSet} onSelect={handleNodeSelect} visibleIds={visibleLayerIds} />
         </aside>
 
         <section className="panel canvas-panel">
@@ -1860,7 +1973,7 @@ export function App() {
                       onMouseDown={(event) => handleItemMouseDown(event, item)}
                     >
                       <div className="canvas-item-handle">{item.type.toUpperCase()} {fileForItem ? `- ${fileForItem.name}` : ""}</div>
-                      {item.type === "phone" ? <div className="device-frame">{itemDocument ? renderNode(itemDocument.root, selectedId, setSelectedId) : null}</div> : null}
+                      {item.type === "phone" ? <div className="device-frame">{itemDocument ? renderNode(itemDocument.root, selectedIdsSet, handleNodeSelect) : null}</div> : null}
                       {item.type === "note" ? <pre className="note-content">{item.text}</pre> : null}
                       {item.type === "frame" ? <div className="frame-content">{item.text}</div> : null}
                     </div>
@@ -1936,6 +2049,12 @@ export function App() {
                   <button type="button" className="btn-soft" onClick={() => void addNode("Card")}>Quick Card</button>
                   <button type="button" className="btn-soft" onClick={() => void duplicateSelected()}>Duplicate</button>
                   <button type="button" className="btn-danger" onClick={() => void removeSelected()}>Remove</button>
+                </div>
+                <div className="inspector-actions">
+                  <button type="button" className="btn-soft" onClick={() => selectSimilarNodes()}>Select Similar</button>
+                  <button type="button" className="btn-primary" onClick={() => void applyPromptToSelectedNodes()} disabled={isApplyingPrompt || selectedIds.length === 0}>
+                    Prompt Selected ({selectedIds.length})
+                  </button>
                 </div>
                 <div className="blueprint-library">
                   <div className="blueprint-library-head">
@@ -2032,6 +2151,22 @@ export function App() {
           </div>
           <h3>Export Output</h3>
           <textarea className="source-box" readOnly value={exportText || "Use Export from the top toolbar."} />
+          <h3>Design Lint</h3>
+          <div className="section-library">
+            <button type="button" className="btn-soft" onClick={() => void runDesignLint()} disabled={isLinting}>
+              {isLinting ? "Running..." : "Run Lint"}
+            </button>
+            <button type="button" className="btn-primary" onClick={() => void handleRepair()}>
+              Auto Fix
+            </button>
+            <div className="lint-list">
+              {lintIssues.slice(0, 8).map((issue) => (
+                <div key={`${issue.code}-${issue.path}`} className={`lint-item lint-${issue.severity}`}>
+                  <strong>{issue.severity.toUpperCase()}</strong> {issue.message}
+                </div>
+              ))}
+            </div>
+          </div>
         </aside>
       </main>
 
@@ -2054,7 +2189,7 @@ export function App() {
             placeholder="Ask for a change (e.g. On screen 2, add a pricing card and CTA)..."
           />
           <button type="button" onClick={() => void handleSimulatePrompt()} disabled={isSimulatingPrompt}>
-            {isSimulatingPrompt ? "Simulating..." : "Simulate"}
+            {isSimulatingPrompt ? "Simulating..." : "Preview"}
           </button>
           <button type="button" onClick={() => void handlePrompt()} disabled={isApplyingPrompt}>
             {isApplyingPrompt ? "Applying..." : "Apply"}
@@ -2092,6 +2227,33 @@ export function App() {
             ? promptWarnings.join(" | ")
             : lastPromptSummary || "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
+        {pendingPromptPreview ? (
+          <div className="preview-actions">
+            <span>Preview ready: {pendingPromptPreview.summary}</span>
+            <button
+              type="button"
+              onClick={() => void handlePrompt(
+                pendingPromptPreview.prompt,
+                {
+                  ...(pendingPromptPreview.selectedNodeId ? { selectedNodeId: pendingPromptPreview.selectedNodeId } : {}),
+                  ...(pendingPromptPreview.selectedScope ? { selectedScope: pendingPromptPreview.selectedScope } : {})
+                }
+              )}
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingPromptPreview(null);
+                setPreviewDocument(null);
+                setStatus("Prompt preview discarded.");
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {contextPrompt.open ? (
