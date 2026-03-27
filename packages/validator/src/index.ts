@@ -111,6 +111,8 @@ function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): 
   }
 
   const stack: AstNode[] = [document.root];
+  let interactiveCount = 0;
+  let mutedActionCount = 0;
   while (stack.length > 0) {
     const node = stack.pop();
     if (!node) {
@@ -127,6 +129,12 @@ function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): 
         repairHint: "Set minHeight to 44 or higher."
       });
     }
+    if (touchCritical.has(node.type)) {
+      interactiveCount += 1;
+    }
+    if (node.type === "Button" && node.props.tone === "muted") {
+      mutedActionCount += 1;
+    }
     if (node.type === "BottomTabBar" && typeof node.props.tabs === "number" && node.props.tabs > 5) {
       issues.push({
         code: "mobile_tabs_exceeded",
@@ -136,8 +144,54 @@ function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): 
         repairHint: "Reduce tab count to 5 or fewer."
       });
     }
+    if (node.type === "Grid" && typeof node.props.columns === "number" && node.props.columns > 2) {
+      issues.push({
+        code: "mobile_grid_dense",
+        path: `node:${node.id}`,
+        message: "Grid columns above 2 can reduce readability on mobile.",
+        severity: "warning",
+        repairHint: "Use at most 2 columns for mobile screens."
+      });
+    }
+    if ((node.type === "Heading" || node.type === "Text") && typeof node.props.text === "string" && node.props.text.length > 160) {
+      issues.push({
+        code: "text_density_risk",
+        path: `node:${node.id}`,
+        message: `${node.type} text is long and may truncate or overwhelm small screens.`,
+        severity: "warning",
+        repairHint: "Split text into shorter blocks or reduce content length."
+      });
+    }
+    if ((node.type === "Card" || node.type === "Container" || node.type === "Stack") && node.props.padding === "xs") {
+      issues.push({
+        code: "spacing_rhythm_tight",
+        path: `node:${node.id}`,
+        message: `${node.type} uses very tight spacing token 'xs'.`,
+        severity: "warning",
+        repairHint: "Prefer sm/md padding for better visual rhythm."
+      });
+    }
 
     stack.push(...node.children);
+  }
+
+  if (interactiveCount > 16) {
+    issues.push({
+      code: "interaction_density_high",
+      path: "root",
+      message: "Screen has many interactive controls and may feel crowded.",
+      severity: "warning",
+      repairHint: "Group controls into sections or split flow across screens."
+    });
+  }
+  if (mutedActionCount > 0) {
+    issues.push({
+      code: "contrast_risk_muted_action",
+      path: "root",
+      message: "Muted-tone action buttons may have weak visual contrast for primary actions.",
+      severity: "warning",
+      repairHint: "Use primary/secondary tone for critical action buttons."
+    });
   }
 }
 

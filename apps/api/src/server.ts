@@ -38,8 +38,10 @@ const metrics = {
   promptRejected: 0
 };
 const promptRate = new Map<string, { windowStart: number; count: number }>();
+const projectPromptRate = new Map<string, { windowStart: number; count: number }>();
 const PROMPT_WINDOW_MS = 60_000;
 const PROMPT_MAX_PER_WINDOW = 60;
+const PROJECT_PROMPT_MAX_PER_WINDOW = 180;
 
 class ApiError extends Error {
   constructor(message: string, readonly statusCode = 400) {
@@ -98,7 +100,38 @@ function enforcePromptRateLimit(ip: string): void {
   }
 }
 
-app.use(cors());
+function enforceProjectPromptRateLimit(projectId: string, ip: string): void {
+  const key = `${projectId}:${ip}`;
+  const now = Date.now();
+  const bucket = projectPromptRate.get(key);
+  if (!bucket || now - bucket.windowStart > PROMPT_WINDOW_MS) {
+    projectPromptRate.set(key, { windowStart: now, count: 1 });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > PROJECT_PROMPT_MAX_PER_WINDOW) {
+    throw new ApiError("Rate limit exceeded for this project prompt stream. Try again in one minute.", 429);
+  }
+}
+
+function audit(event: string, payload: Record<string, unknown>): void {
+  console.log(`[AUDIT] ${JSON.stringify({ event, at: new Date().toISOString(), ...payload })}`);
+}
+
+const allowedOrigins = (process.env.PRYNT_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("CORS origin blocked."));
+  }
+}));
 app.use(express.json({ limit: "1mb" }));
 app.use((req, res, next) => {
   const started = Date.now();
@@ -191,6 +224,7 @@ app.post("/projects/:projectId/patch/preview", route((req, res) => {
 
 app.post("/projects/:projectId/prompt", route(async (req, res) => {
   enforcePromptRateLimit(req.ip || "unknown");
+  enforceProjectPromptRateLimit(req.params.projectId!, req.ip || "unknown");
   metrics.promptRequests += 1;
   try {
     req.body.prompt = sanitizePrompt(req.body?.prompt);
@@ -199,11 +233,18 @@ app.post("/projects/:projectId/prompt", route(async (req, res) => {
     throw error;
   }
   const response = await api.generateFromPrompt(req.params.projectId!, req.body);
+  audit("prompt_apply", {
+    requestId: res.locals.requestId,
+    projectId: req.params.projectId,
+    fileId: req.body?.fileId,
+    promptChars: String(req.body?.prompt ?? "").length
+  });
   res.json(response);
 }));
 
 app.post("/projects/:projectId/prompt/simulate", route(async (req, res) => {
   enforcePromptRateLimit(req.ip || "unknown");
+  enforceProjectPromptRateLimit(req.params.projectId!, req.ip || "unknown");
   metrics.promptRequests += 1;
   try {
     req.body.prompt = sanitizePrompt(req.body?.prompt);
@@ -212,6 +253,32 @@ app.post("/projects/:projectId/prompt/simulate", route(async (req, res) => {
     throw error;
   }
   const response = await api.simulatePrompt(req.params.projectId!, req.body);
+  audit("prompt_simulate", {
+    requestId: res.locals.requestId,
+    projectId: req.params.projectId,
+    fileId: req.body?.fileId,
+    promptChars: String(req.body?.prompt ?? "").length
+  });
+  res.json(response);
+}));
+
+app.post("/projects/:projectId/prompt/batch", route(async (req, res) => {
+  enforcePromptRateLimit(req.ip || "unknown");
+  enforceProjectPromptRateLimit(req.params.projectId!, req.ip || "unknown");
+  metrics.promptRequests += 1;
+  try {
+    req.body.prompt = sanitizePrompt(req.body?.prompt);
+  } catch (error) {
+    metrics.promptRejected += 1;
+    throw error;
+  }
+  const response = await api.generateBatchFromPrompt(req.params.projectId!, req.body);
+  audit("prompt_batch_apply", {
+    requestId: res.locals.requestId,
+    projectId: req.params.projectId,
+    fileId: req.body?.fileId,
+    nodeCount: Array.isArray(req.body?.selectedNodeIds) ? req.body.selectedNodeIds.length : 0
+  });
   res.json(response);
 }));
 

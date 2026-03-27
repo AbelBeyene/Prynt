@@ -126,6 +126,13 @@ export interface GenerateFromPromptRequest {
   selectedScope?: "node" | "section" | "similar" | "screen" | "project";
 }
 
+export interface BatchPromptRequest {
+  fileId?: string;
+  prompt: string;
+  selectedNodeIds: string[];
+  selectedScope?: "node" | "section" | "similar" | "screen" | "project";
+}
+
 export interface PromptTargetResult {
   fileId: string;
   fileName: string;
@@ -149,6 +156,20 @@ export interface PromptSimulationResult {
   prompt: string;
   intent: IntentSpec;
   results: PromptTargetResult[];
+}
+
+export interface BatchPromptResult {
+  prompt: string;
+  fileId: string;
+  fileName: string;
+  appliedCount: number;
+  failedCount: number;
+  nodeResults: Array<{
+    nodeId: string;
+    applied: boolean;
+    warnings: string[];
+  }>;
+  document: DocumentAst;
 }
 
 export interface ValidateRequest {
@@ -676,6 +697,53 @@ export class EditorApiService {
       patches: primary.patches,
       response: primary.response,
       results
+    };
+  }
+
+  async generateBatchFromPrompt(projectId: string, request: BatchPromptRequest): Promise<BatchPromptResult> {
+    const { project, file } = this.resolveFile(projectId, request.fileId);
+    const nodeIds = request.selectedNodeIds.filter((id) => id.trim().length > 0);
+    if (nodeIds.length === 0) {
+      throw new Error("selectedNodeIds cannot be empty.");
+    }
+
+    const nodeResults: Array<{ nodeId: string; applied: boolean; warnings: string[] }> = [];
+    let appliedCount = 0;
+    let failedCount = 0;
+    for (const nodeId of nodeIds) {
+      const generated = await this.generatePatchesForFile(projectId, file, request.prompt, nodeId, request.selectedScope, true);
+      const warnings = generated.response.warnings;
+      const applied = generated.response.applied;
+      nodeResults.push({ nodeId, applied, warnings });
+      if (applied) {
+        appliedCount += 1;
+      } else {
+        failedCount += 1;
+      }
+    }
+
+    project.promptHistory.push({
+      id: nextId("prompt"),
+      prompt: request.prompt,
+      action: "update",
+      targetFileIds: [file.fileId],
+      source: "mixed",
+      createdAt: new Date().toISOString()
+    });
+    if (project.promptHistory.length > 200) {
+      project.promptHistory = project.promptHistory.slice(-200);
+    }
+    project.updatedAt = new Date().toISOString();
+    this.persistProject(project);
+
+    return {
+      prompt: request.prompt,
+      fileId: file.fileId,
+      fileName: file.name,
+      appliedCount,
+      failedCount,
+      nodeResults,
+      document: cloneDocument(file.document)
     };
   }
 

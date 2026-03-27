@@ -74,6 +74,13 @@ async function run() {
   assert(result.response.ok, "Prompt apply failed.");
   assert(Array.isArray(result.body.results) && result.body.results.length > 0, "Prompt apply produced no results.");
 
+  result = await request(`/projects/${pid}/prompt/batch`, {
+    method: "POST",
+    body: JSON.stringify({ fileId: file2, prompt: "Make this section more premium", selectedNodeIds: ["screen-root"], selectedScope: "node" })
+  });
+  assert(result.response.ok, "Prompt batch apply failed.");
+  assert(typeof result.body.appliedCount === "number", "Batch response missing appliedCount.");
+
   result = await request(`/projects/${pid}/prompt`, {
     method: "POST",
     body: JSON.stringify({ fileId: file2, prompt: "<script>alert(1)</script>" })

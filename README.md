@@ -16,6 +16,8 @@ Prynt is a browser-based UX editor with a structured JSON AST source of truth, p
 - Patch console (preview + apply)
 - Validation and repair pipeline before apply.
 - Prompt simulation preview across one or many screens.
+- Prompt simulation preview with accept/reject workflow and diff summary on the canvas.
+- Batch prompt apply for multi-selected nodes in one request.
 - Version history with restore.
 - Undo/redo.
 - Artboard lifecycle operations (create, rename, duplicate, delete).
@@ -101,6 +103,7 @@ npm run smoke:api
 - `POST /projects/:projectId/prompt`
 - `POST /projects/:projectId/intent`
 - `POST /projects/:projectId/prompt/simulate`
+- `POST /projects/:projectId/prompt/batch`
 - `GET /projects/:projectId/prompt/history`
 - `GET /projects/:projectId/prompt/suggestions`
 - `POST /projects/:projectId/templates/apply`

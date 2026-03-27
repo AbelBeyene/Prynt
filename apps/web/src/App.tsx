@@ -105,6 +105,12 @@ interface ReusableSection {
   createdAt: string;
 }
 
+interface StylePreset {
+  id: string;
+  name: string;
+  props: Record<string, unknown>;
+}
+
 interface ContextPromptState {
   open: boolean;
   x: number;
@@ -153,6 +159,31 @@ function findNode(root: AstNode, id: string): AstNode | null {
     stack.push(...current.children);
   }
   return null;
+}
+
+function buildDocumentDiffSummary(before: DocumentAst | null, after: DocumentAst | null): string[] {
+  if (!before || !after) return [];
+  const beforeNodes = flatten(before.root);
+  const afterNodes = flatten(after.root);
+  const beforeMap = new Map(beforeNodes.map((node) => [node.id, node]));
+  const afterMap = new Map(afterNodes.map((node) => [node.id, node]));
+
+  const added = afterNodes.filter((node) => !beforeMap.has(node.id));
+  const removed = beforeNodes.filter((node) => !afterMap.has(node.id));
+  const changed = afterNodes.filter((node) => {
+    const prev = beforeMap.get(node.id);
+    if (!prev) return false;
+    return JSON.stringify(prev.props) !== JSON.stringify(node.props);
+  });
+
+  const lines: string[] = [];
+  if (added.length > 0) lines.push(`+ ${added.length} nodes added`);
+  if (removed.length > 0) lines.push(`- ${removed.length} nodes removed`);
+  if (changed.length > 0) lines.push(`~ ${changed.length} nodes updated`);
+  for (const node of changed.slice(0, 4)) {
+    lines.push(`• ${node.type} (${node.id}) props changed`);
+  }
+  return lines;
 }
 
 function findParentId(root: AstNode, targetId: string): string | null {
@@ -670,6 +701,8 @@ export function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [sectionsLibrary, setSectionsLibrary] = useState<ReusableSection[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
+  const [stylePresets, setStylePresets] = useState<StylePreset[]>([]);
+  const [selectedStylePresetId, setSelectedStylePresetId] = useState("");
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("props");
   const [patchText, setPatchText] = useState('[{\n  "opId": "manual-1",\n  "type": "updateProps",\n  "targetId": "screen-root",\n  "props": { "title": "Updated" }\n}]');
@@ -739,6 +772,10 @@ export function App() {
     if (!activeDocument || !selectedId) return null;
     return findNode(activeDocument.root, selectedId);
   }, [activeDocument, selectedId]);
+  const previewDiffSummary = useMemo(
+    () => buildDocumentDiffSummary(activeDocument, previewDocument),
+    [activeDocument, previewDocument]
+  );
   const selectedBlueprint = useMemo(
     () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId]
@@ -818,6 +855,18 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const raw = localStorage.getItem("prynt-style-presets");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as StylePreset[];
+      setStylePresets(parsed);
+      if (parsed[0]) setSelectedStylePresetId(parsed[0].id);
+    } catch {
+      // ignore corrupt cache
+    }
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(
       "prynt-ui-settings",
       JSON.stringify({
@@ -834,6 +883,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("prynt-sections-library", JSON.stringify(sectionsLibrary.slice(0, 100)));
   }, [sectionsLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem("prynt-style-presets", JSON.stringify(stylePresets.slice(0, 40)));
+  }, [stylePresets]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1211,6 +1264,7 @@ export function App() {
   }
 
   async function applyPromptToSelectedNodes() {
+    if (!projectId || !activeFileId) return;
     if (selectedIds.length === 0) {
       setStatus("Select one or more nodes first.");
       return;
@@ -1221,17 +1275,26 @@ export function App() {
       return;
     }
     setIsApplyingPrompt(true);
-    let applied = 0;
     try {
-      for (const nodeId of selectedIds) {
-        try {
-          await handlePrompt(text, { selectedNodeId: nodeId, selectedScope: "node" });
-          applied += 1;
-        } catch {
-          // continue batch apply
-        }
-      }
-      setStatus(`Applied prompt to ${applied}/${selectedIds.length} selected nodes.`);
+      const response = await apiRequest<{
+        appliedCount: number;
+        failedCount: number;
+        document: DocumentAst;
+      }>(`/projects/${projectId}/prompt/batch`, {
+        method: "POST",
+        body: JSON.stringify({
+          fileId: activeFileId,
+          prompt: text,
+          selectedNodeIds: selectedIds,
+          selectedScope: "node"
+        })
+      });
+      patchFileDocument(activeFileId, response.document);
+      setPreviewDocument(null);
+      setPendingPromptPreview(null);
+      setStatus(`Applied prompt to ${response.appliedCount}/${selectedIds.length} selected nodes (${response.failedCount} failed).`);
+      await refreshVersions(projectId, activeFileId);
+      await refreshPromptLibrary(projectId, activeFileId, promptLibraryQuery);
     } finally {
       setIsApplyingPrompt(false);
     }
@@ -1382,6 +1445,56 @@ export function App() {
   async function updateProp(key: string, value: string) {
     if (!selectedId) return;
     await applyPatch([{ opId: uid("update"), type: "updateProps", targetId: selectedId, props: { [key]: parseValue(value) } }], `Update ${key}`);
+  }
+
+  async function applyComponentVariant(variant: "default" | "soft" | "bold" | "ghost") {
+    if (!selectedId || !selectedNode) return;
+    const common: Record<string, unknown> =
+      variant === "bold"
+        ? { tone: "primary", radius: "xl", size: "lg", padding: "lg", minHeight: 48 }
+        : variant === "soft"
+          ? { tone: "secondary", radius: "lg", size: "md", padding: "md", minHeight: 44 }
+          : variant === "ghost"
+            ? { tone: "muted", radius: "sm", size: "md", padding: "sm", minHeight: 40 }
+            : { tone: "surface", radius: "md", size: "md", padding: "md", minHeight: 44 };
+
+    const props = Object.fromEntries(Object.entries(common).filter(([key]) => Object.prototype.hasOwnProperty.call(selectedNode.props, key)));
+    if (Object.keys(props).length === 0) {
+      setStatus("No compatible style props on selected component.");
+      return;
+    }
+    await applyPatch([{ opId: uid("variant"), type: "updateProps", targetId: selectedId, props }], `Apply ${variant} variant`);
+  }
+
+  function saveCurrentStylePreset() {
+    if (!selectedNode) {
+      setStatus("Select a component first.");
+      return;
+    }
+    const eligibleKeys = ["tone", "radius", "size", "padding", "gap", "minHeight"];
+    const props = Object.fromEntries(Object.entries(selectedNode.props).filter(([key]) => eligibleKeys.includes(key)));
+    if (Object.keys(props).length === 0) {
+      setStatus("Selected component has no style-token props to save.");
+      return;
+    }
+    const preset: StylePreset = {
+      id: uid("style"),
+      name: `${selectedNode.type} style`,
+      props
+    };
+    setStylePresets((current) => [preset, ...current].slice(0, 40));
+    setSelectedStylePresetId(preset.id);
+    setStatus(`Saved style preset: ${preset.name}`);
+  }
+
+  async function applySelectedStylePreset() {
+    if (!selectedId) return;
+    const preset = stylePresets.find((item) => item.id === selectedStylePresetId);
+    if (!preset) {
+      setStatus("Choose a style preset first.");
+      return;
+    }
+    await applyPatch([{ opId: uid("style"), type: "updateProps", targetId: selectedId, props: preset.props }], `Apply style preset: ${preset.name}`);
   }
 
   async function restoreVersion(versionId: number) {
@@ -1964,7 +2077,8 @@ export function App() {
               <div className="canvas-zoom-layer" style={{ transform: `scale(${zoom})` }}>
                 {canvasItems.map((item) => {
                   const fileForItem = item.type === "phone" ? files.find((file) => file.fileId === item.fileId) : null;
-                  const itemDocument = item.id === selectedCanvasItemId && previewDocument ? previewDocument : fileForItem?.document;
+                  const isActivePhone = item.type === "phone" && item.id === selectedCanvasItemId;
+                  const itemDocument = isActivePhone && previewDocument ? previewDocument : fileForItem?.document;
                   return (
                     <div
                       key={item.id}
@@ -1973,7 +2087,19 @@ export function App() {
                       onMouseDown={(event) => handleItemMouseDown(event, item)}
                     >
                       <div className="canvas-item-handle">{item.type.toUpperCase()} {fileForItem ? `- ${fileForItem.name}` : ""}</div>
-                      {item.type === "phone" ? <div className="device-frame">{itemDocument ? renderNode(itemDocument.root, selectedIdsSet, handleNodeSelect) : null}</div> : null}
+                      {item.type === "phone" ? (
+                        <div className="device-frame">
+                          {itemDocument && isActivePhone ? (
+                            renderNode(itemDocument.root, selectedIdsSet, handleNodeSelect)
+                          ) : (
+                            <div className="artboard-lite-preview">
+                              <strong>{fileForItem?.name ?? "Artboard"}</strong>
+                              <span>{fileForItem ? `${flatten(fileForItem.document.root).length} nodes` : ""}</span>
+                              <small>Select artboard to fully render</small>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                       {item.type === "note" ? <pre className="note-content">{item.text}</pre> : null}
                       {item.type === "frame" ? <div className="frame-content">{item.text}</div> : null}
                     </div>
@@ -2038,6 +2164,12 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="inspector-actions">
+                  <button type="button" className="btn-soft" onClick={() => void applyComponentVariant("default")}>Variant Default</button>
+                  <button type="button" className="btn-soft" onClick={() => void applyComponentVariant("soft")}>Variant Soft</button>
+                  <button type="button" className="btn-soft" onClick={() => void applyComponentVariant("bold")}>Variant Bold</button>
+                  <button type="button" className="btn-soft" onClick={() => void applyComponentVariant("ghost")}>Variant Ghost</button>
+                </div>
+                <div className="inspector-actions">
                   <select value={insertComponentType} onChange={(event) => setInsertComponentType(event.target.value)}>
                     {insertComponentOptions.map((option) => (
                       <option key={option} value={option}>
@@ -2055,6 +2187,18 @@ export function App() {
                   <button type="button" className="btn-primary" onClick={() => void applyPromptToSelectedNodes()} disabled={isApplyingPrompt || selectedIds.length === 0}>
                     Prompt Selected ({selectedIds.length})
                   </button>
+                </div>
+                <div className="section-library">
+                  <button type="button" className="btn-soft" onClick={() => saveCurrentStylePreset()}>Save Style Preset</button>
+                  <select value={selectedStylePresetId} onChange={(event) => setSelectedStylePresetId(event.target.value)}>
+                    <option value="">Select style preset</option>
+                    {stylePresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn-primary" onClick={() => void applySelectedStylePreset()}>Apply Style Preset</button>
                 </div>
                 <div className="blueprint-library">
                   <div className="blueprint-library-head">
@@ -2228,30 +2372,35 @@ export function App() {
             : lastPromptSummary || "Tip: reference screens by name, screen number, or 'all screens'."}
         </div>
         {pendingPromptPreview ? (
-          <div className="preview-actions">
-            <span>Preview ready: {pendingPromptPreview.summary}</span>
-            <button
-              type="button"
-              onClick={() => void handlePrompt(
-                pendingPromptPreview.prompt,
-                {
-                  ...(pendingPromptPreview.selectedNodeId ? { selectedNodeId: pendingPromptPreview.selectedNodeId } : {}),
-                  ...(pendingPromptPreview.selectedScope ? { selectedScope: pendingPromptPreview.selectedScope } : {})
-                }
-              )}
-            >
-              Accept
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPendingPromptPreview(null);
-                setPreviewDocument(null);
-                setStatus("Prompt preview discarded.");
-              }}
-            >
-              Reject
-            </button>
+          <div className="preview-block">
+            <div className="preview-actions">
+              <span>Preview ready: {pendingPromptPreview.summary}</span>
+              <button
+                type="button"
+                onClick={() => void handlePrompt(
+                  pendingPromptPreview.prompt,
+                  {
+                    ...(pendingPromptPreview.selectedNodeId ? { selectedNodeId: pendingPromptPreview.selectedNodeId } : {}),
+                    ...(pendingPromptPreview.selectedScope ? { selectedScope: pendingPromptPreview.selectedScope } : {})
+                  }
+                )}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingPromptPreview(null);
+                  setPreviewDocument(null);
+                  setStatus("Prompt preview discarded.");
+                }}
+              >
+                Reject
+              </button>
+            </div>
+            <div className="preview-diff-list">
+              {previewDiffSummary.length > 0 ? previewDiffSummary.map((line) => <div key={line}>{line}</div>) : <div>No structural changes detected.</div>}
+            </div>
           </div>
         ) : null}
       </section>

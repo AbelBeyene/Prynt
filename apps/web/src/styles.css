@@ -517,6 +517,32 @@ body {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
 }
 
+.artboard-lite-preview {
+  min-height: 620px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  color: #b9c8e5;
+  background: linear-gradient(180deg, rgba(16, 24, 36, 0.9), rgba(12, 19, 30, 0.86));
+}
+
+.artboard-lite-preview strong {
+  color: #e5eeff;
+  font-size: 13px;
+}
+
+.artboard-lite-preview span {
+  font-size: 11px;
+  color: #9cb1d5;
+}
+
+.artboard-lite-preview small {
+  font-size: 10px;
+  color: #7f93b8;
+  letter-spacing: 0.04em;
+}
+
 .node {
   position: relative;
   border: 1px solid transparent;
@@ -1112,6 +1138,11 @@ body {
   color: var(--ink-dim);
 }
 
+.preview-block {
+  display: grid;
+  gap: 6px;
+}
+
 .preview-actions button {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1120,6 +1151,18 @@ body {
   background: linear-gradient(180deg, #223553, #1b2c45);
   color: #e5eeff;
   cursor: pointer;
+}
+
+.preview-diff-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  background: rgba(15, 22, 36, 0.75);
+  color: #d6e2ff;
+  max-height: 88px;
+  overflow: auto;
 }
 
 .lint-list {
