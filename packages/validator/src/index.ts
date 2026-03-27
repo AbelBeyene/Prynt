@@ -97,6 +97,18 @@ function validateNode(node: AstNode, path: string, issues: ValidationIssue[]): v
       });
     }
   }
+
+  for (const propName of Object.keys(node.props)) {
+    if (!Object.prototype.hasOwnProperty.call(definition.props, propName)) {
+      issues.push({
+        code: "unknown_prop",
+        path,
+        message: `Unknown prop '${propName}' on '${node.type}'.`,
+        severity: "error",
+        repairHint: "Remove unsupported props or add them to the component schema."
+      });
+    }
+  }
 }
 
 function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): void {
@@ -197,6 +209,8 @@ function validateMobileRules(document: DocumentAst, issues: ValidationIssue[]): 
 
 export function validateDocument(document: DocumentAst): ValidationResult {
   const issues: ValidationIssue[] = [];
+  const MAX_NODES = 1200;
+  const MAX_DEPTH = 32;
 
   const ids = collectNodeIds(document.root);
   if (ids.size === 0) {
@@ -209,11 +223,32 @@ export function validateDocument(document: DocumentAst): ValidationResult {
   }
 
   const duplicateIdCheck = new Set<string>();
-  const stack: Array<{ node: AstNode; path: string }> = [{ node: document.root, path: "root" }];
+  const stack: Array<{ node: AstNode; path: string; depth: number }> = [{ node: document.root, path: "root", depth: 1 }];
+  let visited = 0;
   while (stack.length > 0) {
     const current = stack.pop();
     if (!current) {
       continue;
+    }
+    visited += 1;
+    if (visited > MAX_NODES) {
+      issues.push({
+        code: "document_too_large",
+        path: current.path,
+        message: `Document exceeds ${MAX_NODES} nodes.`,
+        severity: "error",
+        repairHint: "Split this design into multiple files or reduce repeated sections."
+      });
+      break;
+    }
+    if (current.depth > MAX_DEPTH) {
+      issues.push({
+        code: "document_too_deep",
+        path: current.path,
+        message: `Document nesting exceeds max depth of ${MAX_DEPTH}.`,
+        severity: "error",
+        repairHint: "Flatten deep container nesting."
+      });
     }
 
     if (duplicateIdCheck.has(current.node.id)) {
@@ -232,7 +267,8 @@ export function validateDocument(document: DocumentAst): ValidationResult {
     for (const [index, child] of current.node.children.entries()) {
       stack.push({
         node: child,
-        path: `${current.path}.children[${index}]`
+        path: `${current.path}.children[${index}]`,
+        depth: current.depth + 1
       });
     }
   }

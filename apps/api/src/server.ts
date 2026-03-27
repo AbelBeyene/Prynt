@@ -11,10 +11,7 @@ function loadLocalAiEnv(): void {
     path.resolve(process.cwd(), ".env"),
     path.resolve(process.cwd(), "apps/api/.env.local"),
     path.resolve(process.cwd(), "apps/api/.env"),
-    process.env.PRYNT_AI_ENV_PATH,
-    "/Users/abel/Documents/Projects/Adaptmycv/.env.local",
-    path.resolve(process.cwd(), "../Adaptmycv/.env.local"),
-    path.resolve(process.cwd(), "../../Adaptmycv/.env.local")
+    process.env.PRYNT_AI_ENV_PATH
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
   for (const envPath of candidates) {
@@ -74,7 +71,9 @@ function route(handler: (req: Request, res: Response) => Promise<void> | void) {
 }
 
 function sanitizePrompt(raw: unknown): string {
-  const prompt = String(raw ?? "").trim();
+  const prompt = String(raw ?? "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .trim();
   if (!prompt) {
     throw new ApiError("Prompt cannot be empty.", 400);
   }
@@ -83,6 +82,9 @@ function sanitizePrompt(raw: unknown): string {
   }
   if (/<script|<\/script>|javascript:/i.test(prompt)) {
     throw new ApiError("Prompt contains unsafe content.", 400);
+  }
+  if (/\b(ignore previous|reveal system prompt|bypass safety|override instructions)\b/i.test(prompt)) {
+    throw new ApiError("Prompt contains blocked control-injection phrases.", 400);
   }
   return prompt;
 }
@@ -123,6 +125,10 @@ const allowedOrigins = (process.env.PRYNT_ALLOWED_ORIGINS ?? "")
   .map((value) => value.trim())
   .filter(Boolean);
 
+if (process.env.NODE_ENV === "production" && allowedOrigins.length === 0) {
+  throw new Error("PRYNT_ALLOWED_ORIGINS must be set in production.");
+}
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
@@ -133,6 +139,19 @@ app.use(cors({
   }
 }));
 app.use(express.json({ limit: "1mb" }));
+app.use((req, _res, next) => {
+  const token = process.env.PRYNT_API_TOKEN;
+  if (!token) {
+    next();
+    return;
+  }
+  const bearer = req.header("authorization");
+  if (bearer === `Bearer ${token}`) {
+    next();
+    return;
+  }
+  next(new ApiError("Unauthorized", 401));
+});
 app.use((req, res, next) => {
   const started = Date.now();
   const id = requestId();

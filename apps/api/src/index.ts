@@ -8,6 +8,7 @@ import { suggestRepairs, validateDocument } from "@prynt/validator";
 import { canUseLlm, generatePatchesFromLlm } from "./ai.js";
 import Fuse from "fuse.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 export interface VersionSnapshot {
@@ -102,6 +103,7 @@ export interface ApplyPatchRequest {
   fileId?: string;
   patches: PatchOp[];
   reason?: string;
+  expectedVersion?: number;
 }
 
 export interface ApplyPatchResponse {
@@ -131,6 +133,7 @@ export interface BatchPromptRequest {
   prompt: string;
   selectedNodeIds: string[];
   selectedScope?: "node" | "section" | "similar" | "screen" | "project";
+  allOrNothing?: boolean;
 }
 
 export interface PromptTargetResult {
@@ -622,11 +625,17 @@ export class EditorApiService {
 
   applyPatch(projectId: string, request: ApplyPatchRequest): ApplyPatchResponse {
     const { file } = this.resolveFile(projectId, request.fileId);
+    if (typeof request.expectedVersion === "number" && file.document.version !== request.expectedVersion) {
+      throw new Error(`Version mismatch. Expected ${request.expectedVersion}, found ${file.document.version}.`);
+    }
     return this.applyWithAutoRepair(file, request.patches, request.reason ?? "Edit", true);
   }
 
   previewPatch(projectId: string, request: ApplyPatchRequest): PreviewPatchResponse {
     const { file } = this.resolveFile(projectId, request.fileId);
+    if (typeof request.expectedVersion === "number" && file.document.version !== request.expectedVersion) {
+      throw new Error(`Version mismatch. Expected ${request.expectedVersion}, found ${file.document.version}.`);
+    }
     const response = this.applyWithAutoRepair(file, request.patches, request.reason ?? "Preview", false);
     return {
       ...response,
@@ -702,16 +711,31 @@ export class EditorApiService {
 
   async generateBatchFromPrompt(projectId: string, request: BatchPromptRequest): Promise<BatchPromptResult> {
     const { project, file } = this.resolveFile(projectId, request.fileId);
-    const nodeIds = request.selectedNodeIds.filter((id) => id.trim().length > 0);
+    const nodeIds = [...new Set(request.selectedNodeIds.map((id) => id.trim()).filter((id) => id.length > 0))];
     if (nodeIds.length === 0) {
       throw new Error("selectedNodeIds cannot be empty.");
+    }
+    const validNodeIds = new Set(flattenNodeIds(file.document.root));
+    const invalidNodeIds = nodeIds.filter((nodeId) => !validNodeIds.has(nodeId));
+    if (invalidNodeIds.length > 0) {
+      throw new Error(`Unknown node ids in batch: ${invalidNodeIds.slice(0, 10).join(", ")}`);
     }
 
     const nodeResults: Array<{ nodeId: string; applied: boolean; warnings: string[] }> = [];
     let appliedCount = 0;
     let failedCount = 0;
+    const allOrNothing = request.allOrNothing !== false;
+    const tempFile: FileState = {
+      fileId: `tmp-${file.fileId}`,
+      name: file.name,
+      document: cloneDocument(file.document),
+      versions: [],
+      undoStack: [],
+      redoStack: [],
+      patchHistory: []
+    };
     for (const nodeId of nodeIds) {
-      const generated = await this.generatePatchesForFile(projectId, file, request.prompt, nodeId, request.selectedScope, true);
+      const generated = await this.generatePatchesForFile(projectId, tempFile, request.prompt, nodeId, request.selectedScope, true);
       const warnings = generated.response.warnings;
       const applied = generated.response.applied;
       nodeResults.push({ nodeId, applied, warnings });
@@ -719,7 +743,32 @@ export class EditorApiService {
         appliedCount += 1;
       } else {
         failedCount += 1;
+        if (allOrNothing) {
+          return {
+            prompt: request.prompt,
+            fileId: file.fileId,
+            fileName: file.name,
+            appliedCount: 0,
+            failedCount: nodeIds.length,
+            nodeResults: nodeIds.map((id) => ({ nodeId: id, applied: false, warnings: ["Batch aborted (allOrNothing)."] })),
+            document: cloneDocument(file.document)
+          };
+        }
       }
+    }
+
+    if (appliedCount > 0) {
+      file.undoStack.push(cloneDocument(file.document));
+      file.redoStack = [];
+      file.document = cloneDocument(tempFile.document);
+      file.versions.push({
+        id: file.versions.length + 1,
+        reason: `Batch prompt: ${request.prompt.slice(0, 72)}`,
+        createdAt: new Date().toISOString(),
+        document: cloneDocument(file.document)
+      });
+      project.updatedAt = new Date().toISOString();
+      this.persistProject(project);
     }
 
     project.promptHistory.push({
@@ -1180,12 +1229,24 @@ function findFirstNodeByType(root: AstNode, type: string): AstNode | null {
   return null;
 }
 
+function flattenNodeIds(root: AstNode): string[] {
+  const ids: string[] = [];
+  const stack: AstNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    ids.push(node.id);
+    stack.push(...node.children);
+  }
+  return ids;
+}
+
 function createNode(type: string, id: string, props: Record<string, unknown>, children: AstNode[] = []): AstNode {
   return { id, type, props, children };
 }
 
 function nextId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
 function containsAny(text: string, words: string[]): boolean {

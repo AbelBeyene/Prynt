@@ -705,6 +705,8 @@ export function App() {
     selectedScope?: "node" | "section" | "similar" | "screen" | "project";
     summary: string;
   } | null>(null);
+  const [previewOps, setPreviewOps] = useState<PatchOp[]>([]);
+  const [enabledPreviewOpIds, setEnabledPreviewOpIds] = useState<string[]>([]);
   const [artboardSearch, setArtboardSearch] = useState("");
   const [layerSearch, setLayerSearch] = useState("");
   const [artboardRename, setArtboardRename] = useState("");
@@ -1166,10 +1168,11 @@ export function App() {
 
   async function applyPatch(patches: PatchOp[], reason: string) {
     if (!projectId || !activeFileId) return;
+    const expectedVersion = activeDocument?.version;
 
     const response = await apiRequest<{ applied: boolean; fileId: string; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch`, {
       method: "POST",
-      body: JSON.stringify({ fileId: activeFileId, patches, reason })
+      body: JSON.stringify({ fileId: activeFileId, patches, reason, ...(typeof expectedVersion === "number" ? { expectedVersion } : {}) })
     });
 
     patchFileDocument(response.fileId, response.document);
@@ -1180,10 +1183,11 @@ export function App() {
 
   async function previewPatch(patches: PatchOp[]) {
     if (!projectId || !activeFileId) return;
+    const expectedVersion = activeDocument?.version;
 
     const response = await apiRequest<{ applied: boolean; document: DocumentAst; repairSuggestions: string[] }>(`/projects/${projectId}/patch/preview`, {
       method: "POST",
-      body: JSON.stringify({ fileId: activeFileId, patches, reason: "Preview" })
+      body: JSON.stringify({ fileId: activeFileId, patches, reason: "Preview", ...(typeof expectedVersion === "number" ? { expectedVersion } : {}) })
     });
 
     setPreviewDocument(response.document);
@@ -1236,6 +1240,8 @@ export function App() {
       }
       setPreviewDocument(null);
       setPendingPromptPreview(null);
+      setPreviewOps([]);
+      setEnabledPreviewOpIds([]);
       setPromptConfidence(response.intent.confidence);
       setPromptWarnings(response.intent.warnings);
       setLastPromptSummary(
@@ -1284,7 +1290,7 @@ export function App() {
     try {
       const response = await apiRequest<{
         intent: IntentSpec;
-        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; response: { applied: boolean; warnings: string[]; document: DocumentAst } }>;
+        results: Array<{ fileId: string; fileName: string; source: "llm" | "rule"; patches: PatchOp[]; response: { applied: boolean; warnings: string[]; document: DocumentAst } }>;
       }>(`/projects/${projectId}/prompt/simulate`, {
         method: "POST",
         body: JSON.stringify({
@@ -1310,6 +1316,9 @@ export function App() {
         ...(selectedScope ? { selectedScope } : {}),
         summary: `${okCount}/${response.results.length} screen(s) valid`
       });
+      const ops = activePreview?.patches ?? [];
+      setPreviewOps(ops);
+      setEnabledPreviewOpIds(ops.map((op) => op.opId));
       setStatus(`Simulation ready: ${okCount}/${response.results.length} screen(s) valid`);
     } catch (error) {
       setStatus(`Simulation failed: ${(error as Error).message}`);
@@ -1448,10 +1457,24 @@ export function App() {
     }
   }
 
-  function runCritiqueCoach() {
-    const suggestions = generateCritiqueSuggestions(activeDocument);
-    setCritiqueSuggestions(suggestions);
-    setStatus("Design critique generated.");
+  async function runCritiqueCoach() {
+    const local = generateCritiqueSuggestions(activeDocument);
+    if (!projectId || !activeDocument) {
+      setCritiqueSuggestions(local);
+      setStatus("Design critique generated.");
+      return;
+    }
+    try {
+      const response = await apiRequest<{ suggestions: string[] }>(`/projects/${projectId}/repair/suggest`, {
+        method: "POST",
+        body: JSON.stringify({ document: activeDocument })
+      });
+      setCritiqueSuggestions([...local, ...response.suggestions].slice(0, 8));
+      setStatus("Design critique generated.");
+    } catch {
+      setCritiqueSuggestions(local);
+      setStatus("Design critique generated.");
+    }
   }
 
   function selectSimilarNodes() {
@@ -1714,13 +1737,14 @@ export function App() {
         return;
       }
       setFiles((current) => current.filter((item) => item.fileId !== response.fileId));
-      setCanvasItems((current) => current.filter((item) => !(item.type === "phone" && item.fileId === response.fileId)));
-      const nextPhone = canvasItems.find((item) => item.type === "phone" && item.fileId === response.nextActiveFileId);
-      if (nextPhone) {
-        setSelectedCanvasItemId(nextPhone.id);
-      } else {
-        setSelectedCanvasItemId(canvasItems.find((item) => item.type === "phone" && item.fileId !== response.fileId)?.id ?? null);
-      }
+      let nextSelection: string | null = null;
+      setCanvasItems((current) => {
+        const nextItems = current.filter((item) => !(item.type === "phone" && item.fileId === response.fileId));
+        const nextPhone = nextItems.find((item) => item.type === "phone" && item.fileId === response.nextActiveFileId);
+        nextSelection = nextPhone?.id ?? nextItems.find((item) => item.type === "phone")?.id ?? null;
+        return nextItems;
+      });
+      setSelectedCanvasItemId(nextSelection);
       setStatus("Artboard deleted.");
     } catch (error) {
       setStatus(`Delete failed: ${(error as Error).message}`);
@@ -2550,13 +2574,17 @@ export function App() {
               <span>Preview ready: {pendingPromptPreview.summary}</span>
               <button
                 type="button"
-                onClick={() => void handlePrompt(
-                  pendingPromptPreview.prompt,
-                  {
-                    ...(pendingPromptPreview.selectedNodeId ? { selectedNodeId: pendingPromptPreview.selectedNodeId } : {}),
-                    ...(pendingPromptPreview.selectedScope ? { selectedScope: pendingPromptPreview.selectedScope } : {})
+                onClick={() => {
+                  const filtered = previewOps.filter((op) => enabledPreviewOpIds.includes(op.opId));
+                  if (filtered.length === 0) {
+                    setStatus("No preview operations selected.");
+                    return;
                   }
-                )}
+                  void applyPatch(filtered, "Prompt preview apply");
+                  setPendingPromptPreview(null);
+                  setPreviewOps([]);
+                  setEnabledPreviewOpIds([]);
+                }}
               >
                 Accept
               </button>
@@ -2565,11 +2593,30 @@ export function App() {
                 onClick={() => {
                   setPendingPromptPreview(null);
                   setPreviewDocument(null);
+                  setPreviewOps([]);
+                  setEnabledPreviewOpIds([]);
                   setStatus("Prompt preview discarded.");
                 }}
               >
                 Reject
               </button>
+            </div>
+            <div className="preview-ops-list">
+              {previewOps.slice(0, 12).map((op) => (
+                <label key={op.opId} className="preview-op-item">
+                  <input
+                    type="checkbox"
+                    checked={enabledPreviewOpIds.includes(op.opId)}
+                    onChange={(event) => {
+                      setEnabledPreviewOpIds((current) =>
+                        event.target.checked ? [...current, op.opId] : current.filter((id) => id !== op.opId)
+                      );
+                    }}
+                  />
+                  <span>{op.type}</span>
+                  {"targetId" in op ? <small>{String(op.targetId)}</small> : null}
+                </label>
+              ))}
             </div>
             <div className="preview-diff-list">
               {previewDiffSummary.length > 0 ? previewDiffSummary.map((line) => <div key={line}>{line}</div>) : <div>No structural changes detected.</div>}

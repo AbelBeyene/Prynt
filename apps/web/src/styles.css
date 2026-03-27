@@ -1209,6 +1209,29 @@ body {
   overflow: auto;
 }
 
+.preview-ops-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: grid;
+  gap: 4px;
+  max-height: 90px;
+  overflow: auto;
+  background: rgba(12, 18, 29, 0.72);
+}
+
+.preview-op-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #d9e4fb;
+}
+
+.preview-op-item small {
+  color: #93a8cd;
+}
+
 .lint-list {
   display: grid;
   grid-template-columns: 1fr;

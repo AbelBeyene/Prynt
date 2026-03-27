@@ -79,6 +79,8 @@ Optional:
 - `PRYNT_AI_ENV_PATH` to override env file path
 - `PRYNT_AI_DEBUG=1` to log when rule fallback is used
 - `PRYNT_DATA_DIR` to override project persistence directory
+- `PRYNT_ALLOWED_ORIGINS` comma-separated CORS allowlist (required in production)
+- `PRYNT_API_TOKEN` optional bearer token for API access control
 
 ## Build and typecheck
 
@@ -127,5 +129,6 @@ npm run smoke:api
 ## Notes
 
 - Persistence is file-based in `apps/api/data/projects` (override with `PRYNT_DATA_DIR`).
+- Patch apply endpoints support optimistic version checks via `expectedVersion`.
 - The prompt engine is deterministic/rule-based in this MVP; easy to replace with an LLM backend using the existing patch contract.
 - Collaboration/CRDT and export pipelines are intentionally deferred until after this single-user MVP.
